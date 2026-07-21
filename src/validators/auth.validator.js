@@ -6,6 +6,12 @@ export const registerValidator = [
   body('name').trim().notEmpty().withMessage('Name is required'),
   body('role').optional().isIn(['ADMIN', 'DEALER', 'USER', 'PERSON']).withMessage('Invalid role'),
   body('email').optional().isEmail().withMessage('Invalid email'),
+    body('phoneNumber')
+    .trim()
+    .notEmpty()
+    .withMessage('Phone number is required')
+    .isMobilePhone('any')
+    .withMessage('Invalid phone number'),
 ];
 
 export const loginValidator = [
