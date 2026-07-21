@@ -12,6 +12,12 @@ export function createCrudController(Model, options = {}) {
     transformCreate = null,
     transformUpdate = null,
     idParam = 'id',
+    // ownerScopes: map of { ROLE: fieldName }
+    // e.g. { DEALER: 'dealerId', USER: 'parentId' }
+    // A logged-in user whose role appears here can only see/create/edit/delete
+    // records where [fieldName] === their own _id. ADMIN (or any role not
+    // listed) is unrestricted.
+    ownerScopes = {},
   } = options;
 
   const applyPopulate = (query) => {
@@ -19,19 +25,34 @@ export function createCrudController(Model, options = {}) {
     return query;
   };
 
-  const buildFilter = (query) => {
+  const getOwnerScope = (req) => {
+    const field = ownerScopes[req.user?.role];
+    if (field) {
+      return { [field]: req.user._id };
+    }
+    return null;
+  };
+
+  const buildFilter = (req) => {
     const filter = {};
 
     filterableFields.forEach((field) => {
-      if (query[field] !== undefined && query[field] !== '') {
-        filter[field] = query[field];
+      if (req.query[field] !== undefined && req.query[field] !== '') {
+        filter[field] = req.query[field];
       }
     });
 
-    if (query.search && searchableFields.length > 0) {
+    if (req.query.search && searchableFields.length > 0) {
       filter.$or = searchableFields.map((field) => ({
-        [field]: { $regex: query.search, $options: 'i' },
+        [field]: { $regex: req.query.search, $options: 'i' },
       }));
+    }
+
+    // Ownership scope always wins over any client-supplied value for that field —
+    // a scoped role cannot override it via query params.
+    const scope = getOwnerScope(req);
+    if (scope) {
+      Object.assign(filter, scope);
     }
 
     return filter;
@@ -40,6 +61,12 @@ export function createCrudController(Model, options = {}) {
   return {
     create: asyncHandler(async (req, res) => {
       let body = { ...req.body };
+
+      // Force ownership on create too — never trust the client's dealerId/parentId.
+      const scope = getOwnerScope(req);
+      if (scope) {
+        Object.assign(body, scope);
+      }
 
       if (transformCreate) {
         body = await transformCreate(body, req);
@@ -57,7 +84,7 @@ export function createCrudController(Model, options = {}) {
 
     getAll: asyncHandler(async (req, res) => {
       const { page, limit, skip } = getPagination(req.query);
-      const filter = buildFilter(req.query);
+      const filter = buildFilter(req);
 
       const [data, total] = await Promise.all([
         applyPopulate(
@@ -70,9 +97,10 @@ export function createCrudController(Model, options = {}) {
     }),
 
     getById: asyncHandler(async (req, res) => {
-      const document = await applyPopulate(
-        Model.findById(req.params[idParam]).select(select)
-      );
+      const scope = getOwnerScope(req);
+      const filter = scope ? { _id: req.params[idParam], ...scope } : { _id: req.params[idParam] };
+
+      const document = await applyPopulate(Model.findOne(filter).select(select));
 
       if (!document) {
         throw ApiError.notFound(`${Model.modelName} not found`);
@@ -84,12 +112,19 @@ export function createCrudController(Model, options = {}) {
     update: asyncHandler(async (req, res) => {
       let body = { ...req.body };
 
+      const scope = getOwnerScope(req);
+      if (scope) {
+        Object.assign(body, scope);
+      }
+
       if (transformUpdate) {
         body = await transformUpdate(body, req);
       }
 
+      const filter = scope ? { _id: req.params[idParam], ...scope } : { _id: req.params[idParam] };
+
       const document = await applyPopulate(
-        Model.findByIdAndUpdate(req.params[idParam], body, {
+        Model.findOneAndUpdate(filter, body, {
           new: true,
           runValidators: true,
         }).select(select)
@@ -103,7 +138,10 @@ export function createCrudController(Model, options = {}) {
     }),
 
     remove: asyncHandler(async (req, res) => {
-      const document = await Model.findByIdAndDelete(req.params[idParam]);
+      const scope = getOwnerScope(req);
+      const filter = scope ? { _id: req.params[idParam], ...scope } : { _id: req.params[idParam] };
+
+      const document = await Model.findOneAndDelete(filter);
 
       if (!document) {
         throw ApiError.notFound(`${Model.modelName} not found`);

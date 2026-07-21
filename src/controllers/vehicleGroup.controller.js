@@ -5,4 +5,8 @@ export const vehicleGroupController = createCrudController(VehicleGroup, {
   populate: ['dealerId', 'ownerUserId', 'createdBy'],
   searchableFields: ['groupName', 'description'],
   filterableFields: ['dealerId', 'ownerUserId', 'status'],
+  ownerScopes: {
+    DEALER: 'dealerId',
+    USER: 'ownerUserId',
+  },
 });

@@ -5,4 +5,7 @@ export const licensePackageController = createCrudController(LicensePackage, {
   populate: ['dealerId', 'createdBy'],
   searchableFields: ['packageCode', 'packageName', 'description'],
   filterableFields: ['dealerId', 'status'],
+  ownerScopes: {
+    DEALER: 'dealerId',
+  },
 });
