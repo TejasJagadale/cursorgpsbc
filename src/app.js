@@ -14,7 +14,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
 
-app.use('/api/v1', routes);
+app.use('/api/', routes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
