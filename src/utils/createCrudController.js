@@ -56,30 +56,41 @@ export function createCrudController(Model, options = {}) {
 
   return {
     create: asyncHandler(async (req, res) => {
+      console.log('=== CREATE CONTROLLER START ===');
       let body = { ...req.body };
+      console.log('Original body:', JSON.stringify(body, null, 2));
 
       // Force ownership on create too — never trust the client's dealerId/parentId.
       const scope = getOwnerScope(req);
+      console.log('Owner scope:', scope);
       if (scope) {
         Object.assign(body, scope);
       }
 
       if (transformCreate) {
+        console.log('Calling transformCreate...');
         body = await transformCreate(body, req);
+        console.log('After transformCreate:', JSON.stringify(body, null, 2));
       }
 
+      console.log('Creating document...');
       const document = await Model.create(body);
-      // Call afterCreate hook if provided
-      if (afterCreate) {
+      console.log('Document created:', document._id);
+    if (afterCreate) {
+        console.log('Calling afterCreate hook...');
         await afterCreate(document, req);
+        console.log('afterCreate hook completed');
+      } else {
+        console.log('No afterCreate hook defined');
       }
 
       let result = document;
 
-      if (select || populate.length > 0) {
+ if (select || populate.length > 0) {
         result = await applyPopulate(Model.findById(document._id).select(select));
       }
 
+            console.log('=== CREATE CONTROLLER END ===');
       res.status(201).json(ApiResponse.success(result, 'Created successfully'));
     }),
 

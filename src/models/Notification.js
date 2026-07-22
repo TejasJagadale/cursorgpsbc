@@ -65,4 +65,5 @@ notificationSchema.index({ recipientId: 1, isRead: 1 });
 notificationSchema.index({ recipientId: 1, createdAt: -1 });
 notificationSchema.index({ status: 1, actionRequired: 1 });
 
-export const Notification = mongoose.model('Notification', notificationSchema);
+// Create the model if it doesn't exist
+export const Notification = mongoose.models.Notification || mongoose.model('Notification', notificationSchema);

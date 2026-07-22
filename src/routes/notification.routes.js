@@ -10,6 +10,7 @@ router.use(authenticate);
 router.get('/', notificationController.getNotifications);
 router.get('/unread-count', notificationController.getUnreadCount);
 router.patch('/:id/read', notificationController.markAsRead);
-router.patch('/:id/action', notificationController.handleAction);
+router.patch('/:subUserId/approve', notificationController.approveSubUser);
+router.patch('/:subUserId/reject', notificationController.rejectSubUser);
 
 export default router;
