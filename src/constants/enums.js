@@ -30,7 +30,9 @@ export const Occupation = {
 export const EntityStatus = {
   ACTIVE: 'ACTIVE',
   INACTIVE: 'INACTIVE',
+  PENDING: 'PENDING', // Make sure this exists
   SUSPENDED: 'SUSPENDED',
+  DELETED: 'DELETED',
 };
 
 export const OnboardingType = {

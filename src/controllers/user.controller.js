@@ -14,41 +14,46 @@ export const userController = createCrudController(User, {
     USER: 'parentId',
   },
   transformCreate: async (body, req) => {
+    // Remove status from body if it's SUB_USER
+    if (body.role === 'SUB_USER') {
+      delete body.status; // Remove frontend status
+    }
+
     // Hash password if provided
     if (body.password) {
       body.password = await hashPassword(body.password);
     }
-    
+
     // If the current user is creating a sub-user
     if (req.user && body.role === 'SUB_USER') {
       // Set the referring user
       body.referredByUserId = req.user._id;
-      
+
       // Set parentId to the current user
       if (!body.parentId) {
         body.parentId = req.user._id;
       }
-      
+
       // Set dealerId from the parent user's dealer
       if (!body.dealerId && req.user.dealerId) {
         body.dealerId = req.user.dealerId;
       }
-      
+
       // Set status to PENDING for approval
       body.status = 'PENDING';
       body.approvalStatus = 'PENDING';
-      
+
       // Store the parent user's dealer for notification
       body._notificationData = {
         parentUser: req.user,
       };
     }
-    
+
     // Set createdBy to the current user
     if (req.user) {
       body.createdBy = req.user._id;
     }
-    
+
     return body;
   },
   transformUpdate: async (body, req) => {
@@ -62,21 +67,21 @@ export const userController = createCrudController(User, {
     // If a sub-user was created, send notification to the dealer
     if (document.role === 'SUB_USER' && document._notificationData) {
       const { parentUser } = document._notificationData;
-      
+
       // Find the dealer
       let dealerId = parentUser.dealerId;
-      
+
       // If parent is a USER, get their dealer
       if (!dealerId && parentUser.role === 'USER') {
         const parent = await User.findById(parentUser._id).select('dealerId');
         dealerId = parent?.dealerId;
       }
-      
+
       // If parent is DEALER, use their ID directly
       if (parentUser.role === 'DEALER') {
         dealerId = parentUser._id;
       }
-      
+
       if (dealerId) {
         await notificationService.createNotification({
           recipientId: dealerId,

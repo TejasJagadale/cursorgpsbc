@@ -11,12 +11,8 @@ export function createCrudController(Model, options = {}) {
     filterableFields = [],
     transformCreate = null,
     transformUpdate = null,
+    afterCreate = null, // Add this new option
     idParam = 'id',
-    // ownerScopes: map of { ROLE: fieldName }
-    // e.g. { DEALER: 'dealerId', USER: 'parentId' }
-    // A logged-in user whose role appears here can only see/create/edit/delete
-    // records where [fieldName] === their own _id. ADMIN (or any role not
-    // listed) is unrestricted.
     ownerScopes = {},
   } = options;
 
@@ -73,6 +69,11 @@ export function createCrudController(Model, options = {}) {
       }
 
       const document = await Model.create(body);
+      // Call afterCreate hook if provided
+      if (afterCreate) {
+        await afterCreate(document, req);
+      }
+
       let result = document;
 
       if (select || populate.length > 0) {
