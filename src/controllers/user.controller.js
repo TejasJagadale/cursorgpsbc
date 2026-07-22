@@ -1,3 +1,7 @@
+import { User } from '../models/User.js';
+import { createCrudController } from '../utils/createCrudController.js';
+import { hashPassword } from '../utils/password.js';
+
 export const userController = createCrudController(User, {
   select: '-password',
   populate: ['dealerId', 'parentId', 'referredByUserId', 'createdBy'],
