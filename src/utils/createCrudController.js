@@ -55,44 +55,75 @@ export function createCrudController(Model, options = {}) {
   };
 
   return {
-    create: asyncHandler(async (req, res) => {
-      console.log('=== CREATE CONTROLLER START ===');
-      let body = { ...req.body };
-      console.log('Original body:', JSON.stringify(body, null, 2));
+create: asyncHandler(async (req, res) => {
+  console.log('=== CREATE CONTROLLER START ===');
+  let body = { ...req.body };
+  console.log('Original body:', JSON.stringify(body, null, 2));
+  console.log('User role:', req.user?.role);
+  console.log('User ID:', req.user?._id);
 
-      // Force ownership on create too — never trust the client's dealerId/parentId.
-      const scope = getOwnerScope(req);
-      console.log('Owner scope:', scope);
-      if (scope) {
-        Object.assign(body, scope);
-      }
+  // Force ownership on create too — never trust the client's dealerId/parentId.
+  const scope = getOwnerScope(req);
+  console.log('Owner scope:', scope);
+  if (scope) {
+    Object.assign(body, scope);
+    console.log('After applying owner scope:', JSON.stringify(body, null, 2));
+  }
 
-      if (transformCreate) {
-        console.log('Calling transformCreate...');
-        body = await transformCreate(body, req);
-        console.log('After transformCreate:', JSON.stringify(body, null, 2));
-      }
+  if (transformCreate) {
+    console.log('Calling transformCreate...');
+    body = await transformCreate(body, req);
+    console.log('After transformCreate:', JSON.stringify(body, null, 2));
+  }
 
-      console.log('Creating document...');
-      const document = await Model.create(body);
-      console.log('Document created:', document._id);
+  // Validate required fields before creating
+  console.log('Validating required fields...');
+  const requiredFields = Object.keys(Model.schema.paths).filter(
+    path => Model.schema.paths[path].isRequired
+  );
+  console.log('Required fields:', requiredFields);
+  
+  const missingFields = requiredFields.filter(field => {
+    const value = body[field];
+    return value === undefined || value === null || value === '';
+  });
+  
+  if (missingFields.length > 0) {
+    console.log('Missing required fields:', missingFields);
+    throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
+  }
+
+  console.log('Creating document...');
+  try {
+    const document = await Model.create(body);
+    console.log('Document created:', document._id);
+    
     if (afterCreate) {
-        console.log('Calling afterCreate hook...');
-        await afterCreate(document, req);
-        console.log('afterCreate hook completed');
-      } else {
-        console.log('No afterCreate hook defined');
-      }
+      console.log('Calling afterCreate hook...');
+      await afterCreate(document, req);
+      console.log('afterCreate hook completed');
+    } else {
+      console.log('No afterCreate hook defined');
+    }
 
-      let result = document;
+    let result = document;
 
- if (select || populate.length > 0) {
-        result = await applyPopulate(Model.findById(document._id).select(select));
-      }
+    if (select || populate.length > 0) {
+      result = await applyPopulate(Model.findById(document._id).select(select));
+    }
 
-            console.log('=== CREATE CONTROLLER END ===');
-      res.status(201).json(ApiResponse.success(result, 'Created successfully'));
-    }),
+    console.log('=== CREATE CONTROLLER END ===');
+    res.status(201).json(ApiResponse.success(result, 'Created successfully'));
+  } catch (error) {
+    console.error('Error creating document:', error);
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      errors: error.errors
+    });
+    throw error;
+  }
+}),
 
     getAll: asyncHandler(async (req, res) => {
       const { page, limit, skip } = getPagination(req.query);
