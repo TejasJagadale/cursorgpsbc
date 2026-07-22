@@ -4,6 +4,7 @@ export const UserRole = {
   USER: 'USER',
   SUB_USER: 'SUB_USER',
   PERSON: 'PERSON',
+  EMPLOYEE: 'EMPLOYEE',
 };
 
 export const EmploymentType = {
