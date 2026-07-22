@@ -1,4 +1,5 @@
 // services/notification.service.js
+import mongoose from 'mongoose';
 import { Notification } from '../models/Notification.js';
 import { User } from '../models/User.js';
 import { EntityStatus } from '../constants/enums.js';
@@ -68,6 +69,13 @@ class NotificationService {
     if (!subUser || subUser.role !== 'SUB_USER') {
       throw new Error('Invalid sub-user');
     }
+
+    // Idempotency guard: if this was already actioned (e.g. double-click,
+    // stale UI, notification shown again due to the bug below), don't
+    // re-run side effects or send a duplicate notification to the parent.
+    if (subUser.approvalStatus === 'APPROVED') {
+      return subUser;
+    }
     
     // Update sub-user status
     subUser.status = EntityStatus.ACTIVE;
@@ -78,14 +86,19 @@ class NotificationService {
     
     await subUser.save();
     
-    // Mark all pending notifications for this sub-user as ACTIONED
+    // Mark all pending notifications for this sub-user as ACTIONED.
+    // `data` is a Mixed field, so Mongoose never casts `data.subUserId`
+    // for us — we must cast it to ObjectId ourselves or this query
+    // silently matches zero documents and the request notification
+    // stays PENDING forever (reappearing on every refresh).
+    const subUserObjectId = new mongoose.Types.ObjectId(subUserId);
     await Notification.updateMany(
       {
-        'data.subUserId': subUserId,
+        'data.subUserId': subUserObjectId,
         type: 'SUB_USER_APPROVAL_REQUEST',
         status: 'PENDING',
       },
-      { status: 'ACTIONED' }
+      { status: 'ACTIONED', isRead: true, readAt: new Date() }
     );
     
     // Notify the parent user (who created the sub-user)
@@ -116,6 +129,12 @@ class NotificationService {
     if (!subUser || subUser.role !== 'SUB_USER') {
       throw new Error('Invalid sub-user');
     }
+
+    // Same idempotency guard as approve — prevents duplicate
+    // notifications/side effects on repeated calls.
+    if (subUser.approvalStatus === 'REJECTED') {
+      return subUser;
+    }
     
     // Update sub-user status
     subUser.status = EntityStatus.INACTIVE;
@@ -127,13 +146,15 @@ class NotificationService {
     await subUser.save();
     
     // Mark all pending notifications for this sub-user as ACTIONED
+    // (see approveSubUser for why the ObjectId cast is required here).
+    const subUserObjectId = new mongoose.Types.ObjectId(subUserId);
     await Notification.updateMany(
       {
-        'data.subUserId': subUserId,
+        'data.subUserId': subUserObjectId,
         type: 'SUB_USER_APPROVAL_REQUEST',
         status: 'PENDING',
       },
-      { status: 'ACTIONED' }
+      { status: 'ACTIONED', isRead: true, readAt: new Date() }
     );
     
     // Notify the parent user
