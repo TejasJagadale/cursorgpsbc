@@ -1,9 +1,10 @@
-// controllers/user.controller.js - Updated with debug logs
+// controllers/user.controller.js
 import { User } from '../models/User.js';
 import { createCrudController } from '../utils/createCrudController.js';
 import { hashPassword } from '../utils/password.js';
 import { notificationService } from '../services/notification.service.js';
 import { EntityStatus } from '../constants/enums.js';
+import mongoose from 'mongoose';
 
 export const userController = createCrudController(User, {
   select: '-password',
@@ -29,24 +30,52 @@ export const userController = createCrudController(User, {
       body.password = await hashPassword(body.password);
     }
     
-    // If the current user is creating a sub-user
+    // Handle EMPLOYEE creation
+    if (body.role === 'EMPLOYEE') {
+      console.log('Creating EMPLOYEE');
+      
+      // If dealerId is 'ADMIN', we need to handle this specially
+      if (body.dealerId === 'ADMIN') {
+        console.log('EMPLOYEE assigned to ADMIN');
+        // For ADMIN, we don't set a dealerId - it's a system employee
+        body.dealerId = null;
+      } else if (body.dealerId && mongoose.Types.ObjectId.isValid(body.dealerId)) {
+        // Valid ObjectId, keep as is
+        console.log('EMPLOYEE assigned to dealer:', body.dealerId);
+      } else if (req.user && req.user.role === 'DEALER') {
+        // If current user is a DEALER, set their ID as dealerId
+        body.dealerId = req.user._id;
+        console.log('EMPLOYEE assigned to current dealer:', body.dealerId);
+      } else if (req.user && req.user.dealerId) {
+        // If current user has a dealerId, use that
+        body.dealerId = req.user.dealerId;
+        console.log('EMPLOYEE assigned to user\'s dealer:', body.dealerId);
+      } else {
+        console.log('WARNING: No valid dealerId found for EMPLOYEE');
+        // Set to null and let backend handle it or throw validation error
+        body.dealerId = null;
+      }
+      
+      // Set status to ACTIVE for employees (unless specified otherwise)
+      if (!body.status) {
+        body.status = EntityStatus.ACTIVE;
+      }
+    }
+    
+    // Handle SUB_USER creation (existing code)
     if (req.user && body.role === 'SUB_USER') {
       console.log('Creating SUB_USER - setting up approval workflow');
       
-      // Set the referring user
       body.referredByUserId = req.user._id;
       
-      // Set parentId to the current user
       if (!body.parentId) {
         body.parentId = req.user._id;
       }
       
-      // Set dealerId from the parent user's dealer
       if (!body.dealerId && req.user.dealerId) {
         body.dealerId = req.user.dealerId;
         console.log('Set dealerId from parent user:', body.dealerId);
       } else if (!body.dealerId) {
-        // If the parent user doesn't have a dealerId, try to find it
         const parentUser = await User.findById(req.user._id).select('dealerId');
         if (parentUser && parentUser.dealerId) {
           body.dealerId = parentUser.dealerId;
@@ -56,11 +85,9 @@ export const userController = createCrudController(User, {
         }
       }
       
-      // Force status to PENDING for approval workflow
       body.status = EntityStatus.PENDING;
       body.approvalStatus = 'PENDING';
       
-      // Store the parent user for notification
       body._notificationData = {
         parentUser: req.user,
       };
@@ -102,11 +129,10 @@ export const userController = createCrudController(User, {
       approvalStatus: document.approvalStatus
     });
     
-    // If a sub-user was created, send notification to the dealer
+    // Handle SUB_USER notifications (existing code)
     if (document.role === 'SUB_USER') {
       console.log('Processing SUB_USER notification');
       
-      // Get the parent user from the document
       const parentUser = await User.findById(document.parentId).select('name role dealerId');
       console.log('Parent user found:', parentUser ? {
         _id: parentUser._id,
@@ -120,16 +146,13 @@ export const userController = createCrudController(User, {
         return;
       }
       
-      // Find the dealer
       let dealerId = document.dealerId;
       
-      // If no dealerId on sub-user, try to get it from parent
       if (!dealerId && parentUser.dealerId) {
         dealerId = parentUser.dealerId;
         console.log('Got dealerId from parent user:', dealerId);
       }
       
-      // If parent is DEALER, use their ID directly
       if (parentUser.role === 'DEALER') {
         dealerId = parentUser._id;
         console.log('Parent is DEALER, using their ID:', dealerId);
@@ -164,8 +187,6 @@ export const userController = createCrudController(User, {
         }
       } else {
         console.log('❌ WARNING: No dealerId found to send notification');
-        console.log('Document dealerId:', document.dealerId);
-        console.log('Parent user dealerId:', parentUser.dealerId);
       }
     } else {
       console.log('Not a SUB_USER, skipping notification');
