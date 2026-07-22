@@ -1,3 +1,4 @@
+// models/User.js
 import mongoose from 'mongoose';
 import {
   UserRole,
@@ -87,7 +88,7 @@ const userSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: Object.values(EntityStatus),
-      default: EntityStatus.ACTIVE,
+      default: EntityStatus.PENDING, // Changed from ACTIVE to PENDING for sub-users
     },
     onboardingType: {
       type: String,
@@ -98,6 +99,21 @@ const userSchema = new mongoose.Schema(
       ref: 'User',
       default: null,
     },
+    // New fields for approval workflow
+    approvedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    approvedAt: {
+      type: Date,
+      default: null,
+    },
+    approvalStatus: {
+      type: String,
+      enum: ['PENDING', 'APPROVED', 'REJECTED'],
+      default: 'PENDING',
+    },
   },
   {
     collection: 'users',
@@ -105,9 +121,20 @@ const userSchema = new mongoose.Schema(
   }
 );
 
+// Indexes for better query performance
 userSchema.index({ dealerId: 1, role: 1 });
 userSchema.index({ parentId: 1 });
+userSchema.index({ referredByUserId: 1 });
 userSchema.index({ email: 1 }, { sparse: true });
 userSchema.index({ phoneNumber: 1 }, { sparse: true });
+userSchema.index({ approvalStatus: 1 });
+
+// Virtual for checking if user can access dashboard
+userSchema.virtual('canAccessDashboard').get(function() {
+  if (this.role === 'SUB_USER') {
+    return this.approvalStatus === 'APPROVED' && this.status === 'ACTIVE';
+  }
+  return this.status === 'ACTIVE';
+});
 
 export const User = mongoose.model('User', userSchema);
