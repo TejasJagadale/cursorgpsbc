@@ -1,10 +1,10 @@
-// In userAccess.routes.js or a separate validation file
+// userAccess.routes.js - Only validate sharedUserId for user-access endpoint
 import { Router } from 'express';
 import { userAccessController } from '../controllers/userAccess.controller.js';
 import { createCrudRoutes } from './createCrudRoutes.js';
 import mongoose from 'mongoose';
 
-// Validation middleware for user access
+// Validation middleware for user access ONLY
 const validateUserAccess = (req, res, next) => {
   const { dealerId, ownerUserId, sharedUserId, createdBy } = req.body;
   
@@ -12,6 +12,7 @@ const validateUserAccess = (req, res, next) => {
   
   const errors = [];
   
+  // Only validate sharedUserId for user-access endpoint
   if (!dealerId) errors.push('dealerId is required');
   if (!ownerUserId) errors.push('ownerUserId is required');
   if (!sharedUserId) errors.push('sharedUserId is required');
@@ -42,7 +43,7 @@ const validateUserAccess = (req, res, next) => {
   next();
 };
 
-// Apply validation to create route
+// Apply validation only to user-access routes
 const router = Router();
 router.post('/', validateUserAccess, userAccessController.create);
 router.get('/', userAccessController.getAll);
