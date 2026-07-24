@@ -1,7 +1,9 @@
+// routes/index.js
 import { Router } from 'express';
 import { authenticate } from '../middlewares/auth.middleware.js';
 import authRoutes from './auth.routes.js';
 import userRoutes from './user.routes.js';
+import subUserRoutes from './subUser.routes.js'; // Make sure this import exists
 import licensePackageRoutes from './licensePackage.routes.js';
 import licenseRoutes from './license.routes.js';
 import licenseHistoryRoutes from './licenseHistory.routes.js';
@@ -13,7 +15,6 @@ import resourceAccessRoutes from './resourceAccess.routes.js';
 import deviceRoutes from './device.routes.js';
 import deviceAssignmentRoutes from './deviceAssignment.routes.js';
 import notificationRoutes from './notification.routes.js';
-import subUserRoutes from './subUser.routes.js';
 
 const router = Router();
 
@@ -30,7 +31,7 @@ router.use('/auth', authRoutes);
 router.use(authenticate);
 
 router.use('/users', userRoutes);
-router.use('/sub-users', subUserRoutes);
+router.use('/sub-users', subUserRoutes); // This line must exist
 router.use('/notifications', notificationRoutes);
 router.use('/license-packages', licensePackageRoutes);
 router.use('/licenses', licenseRoutes);

@@ -7,7 +7,7 @@ import { User } from '../models/User.js';
 import mongoose from 'mongoose';
 
 export const subUserController = {
-  // Get sub-users based on role
+  // Get sub-users with access (role-based)
   getSubUsersWithAccess: asyncHandler(async (req, res) => {
     const { ownerUserId, status, dealerId } = req.query;
     const user = req.user;
@@ -65,18 +65,75 @@ export const subUserController = {
     res.json(ApiResponse.success(result, 'Sub-users retrieved successfully'));
   }),
 
-  // Get approved sub-users for dropdown (lightweight)
-  getSubUsersForDropdown: asyncHandler(async (req, res) => {
-    const { ownerUserId } = req.query;
+  // Get approved sub-users
+  getApprovedSubUsers: asyncHandler(async (req, res) => {
+    const { ownerUserId, dealerId } = req.query;
     const user = req.user;
     
     let filter = { status: 'ACTIVE' };
 
-    // Role-based filtering
     if (user.role === 'USER') {
       filter.ownerUserId = user._id;
     } else if (user.role === 'DEALER') {
-      filter.dealerId = user.dealerId;
+      filter.dealerId = user.dealerId || dealerId;
+    } else if (user.role === 'ADMIN' && ownerUserId) {
+      filter.ownerUserId = ownerUserId;
+    }
+
+    const accessRecords = await UserAccess.find(filter)
+      .populate('sharedUserId')
+      .populate('ownerUserId');
+
+    const result = accessRecords.map(record => ({
+      ...record.sharedUserId.toObject(),
+      accessStatus: record.status,
+      accessRecordId: record._id,
+      owner: record.ownerUserId
+    }));
+
+    res.json(ApiResponse.success(result, 'Approved sub-users retrieved successfully'));
+  }),
+
+  // Get pending sub-users
+  getPendingSubUsers: asyncHandler(async (req, res) => {
+    const { ownerUserId, dealerId } = req.query;
+    const user = req.user;
+    
+    let filter = { status: 'PENDING' };
+
+    if (user.role === 'USER') {
+      filter.ownerUserId = user._id;
+    } else if (user.role === 'DEALER') {
+      filter.dealerId = user.dealerId || dealerId;
+    } else if (user.role === 'ADMIN' && ownerUserId) {
+      filter.ownerUserId = ownerUserId;
+    }
+
+    const accessRecords = await UserAccess.find(filter)
+      .populate('sharedUserId')
+      .populate('ownerUserId');
+
+    const result = accessRecords.map(record => ({
+      ...record.sharedUserId.toObject(),
+      accessStatus: record.status,
+      accessRecordId: record._id,
+      owner: record.ownerUserId
+    }));
+
+    res.json(ApiResponse.success(result, 'Pending sub-users retrieved successfully'));
+  }),
+
+  // Get sub-users for dropdown
+  getSubUsersForDropdown: asyncHandler(async (req, res) => {
+    const { ownerUserId, dealerId } = req.query;
+    const user = req.user;
+    
+    let filter = { status: 'ACTIVE' };
+
+    if (user.role === 'USER') {
+      filter.ownerUserId = user._id;
+    } else if (user.role === 'DEALER') {
+      filter.dealerId = user.dealerId || dealerId;
     } else if (user.role === 'ADMIN' && ownerUserId) {
       filter.ownerUserId = ownerUserId;
     }
@@ -97,61 +154,72 @@ export const subUserController = {
     res.json(ApiResponse.success(subUsers, 'Sub-users for dropdown retrieved successfully'));
   }),
 
-  // Get pending sub-users
-  getPendingSubUsers: asyncHandler(async (req, res) => {
+  // Get access status for a specific sub-user
+  getSubUserAccessStatus: asyncHandler(async (req, res) => {
+    const { id } = req.params;
     const { ownerUserId } = req.query;
     const user = req.user;
-    
-    let filter = { status: 'PENDING' };
 
-    if (user.role === 'USER') {
-      filter.ownerUserId = user._id;
-    } else if (user.role === 'DEALER') {
-      filter.dealerId = user.dealerId;
-    } else if (user.role === 'ADMIN' && ownerUserId) {
-      filter.ownerUserId = ownerUserId;
+    if (!ownerUserId && user.role === 'USER') {
+      // If USER is asking, use their own ID
+      const ownerId = user._id;
+      const accessRecord = await UserAccess.findOne({
+        ownerUserId: ownerId,
+        sharedUserId: id
+      }).populate('sharedUserId');
+
+      if (!accessRecord) {
+        return res.json(ApiResponse.success({
+          hasAccess: false,
+          status: null,
+          message: 'No access record found'
+        }));
+      }
+
+      const result = {
+        hasAccess: accessRecord.status === 'ACTIVE',
+        status: accessRecord.status,
+        recordId: accessRecord._id,
+        permissions: accessRecord.permissions,
+        subUser: accessRecord.sharedUserId
+      };
+
+      return res.json(ApiResponse.success(result, 'Access status retrieved successfully'));
     }
 
-    const accessRecords = await UserAccess.find(filter)
-      .populate('sharedUserId')
-      .populate('ownerUserId');
-
-    const result = accessRecords.map(record => ({
-      ...record.sharedUserId.toObject(),
-      accessStatus: record.status,
-      accessRecordId: record._id,
-      owner: record.ownerUserId
-    }));
-
-    res.json(ApiResponse.success(result, 'Pending sub-users retrieved successfully'));
-  }),
-
-  // Get approved sub-users
-  getApprovedSubUsers: asyncHandler(async (req, res) => {
-    const { ownerUserId } = req.query;
-    const user = req.user;
-    
-    let filter = { status: 'ACTIVE' };
-
-    if (user.role === 'USER') {
-      filter.ownerUserId = user._id;
-    } else if (user.role === 'DEALER') {
-      filter.dealerId = user.dealerId;
-    } else if (user.role === 'ADMIN' && ownerUserId) {
-      filter.ownerUserId = ownerUserId;
+    if (!ownerUserId) {
+      throw ApiError.badRequest('ownerUserId is required');
     }
 
-    const accessRecords = await UserAccess.find(filter)
-      .populate('sharedUserId')
-      .populate('ownerUserId');
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw ApiError.badRequest('Invalid sub-user ID');
+    }
 
-    const result = accessRecords.map(record => ({
-      ...record.sharedUserId.toObject(),
-      accessStatus: record.status,
-      accessRecordId: record._id,
-      owner: record.ownerUserId
-    }));
+    if (!mongoose.Types.ObjectId.isValid(ownerUserId)) {
+      throw ApiError.badRequest('Invalid ownerUserId');
+    }
 
-    res.json(ApiResponse.success(result, 'Approved sub-users retrieved successfully'));
+    const accessRecord = await UserAccess.findOne({
+      ownerUserId: ownerUserId,
+      sharedUserId: id
+    }).populate('sharedUserId');
+
+    if (!accessRecord) {
+      return res.json(ApiResponse.success({
+        hasAccess: false,
+        status: null,
+        message: 'No access record found'
+      }));
+    }
+
+    const result = {
+      hasAccess: accessRecord.status === 'ACTIVE',
+      status: accessRecord.status,
+      recordId: accessRecord._id,
+      permissions: accessRecord.permissions,
+      subUser: accessRecord.sharedUserId
+    };
+
+    res.json(ApiResponse.success(result, 'Access status retrieved successfully'));
   }),
 };
