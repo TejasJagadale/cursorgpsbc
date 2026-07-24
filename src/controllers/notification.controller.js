@@ -1,5 +1,10 @@
 // controllers/notification.controller.js (or wherever approveSubUser/rejectSubUser live)
-
+import {
+    approveSubUser,
+    rejectSubUser,
+    getNotifications,
+    markAsRead,
+} from '../controllers/notification.controller.js';
 import { User } from '../models/User.js';
 import { UserAccess } from '../models/UserAccess.js';
 import { Notification } from '../models/Notification.js'; // adjust path/name to your actual model
