@@ -219,13 +219,19 @@ export function createCrudController(Model, options = {}) {
     return query;
   };
 
-  const getOwnerScope = (req) => {
-    const field = ownerScopes[req.user?.role];
-    if (field) {
-      return { [field]: req.user._id };
-    }
-    return null;
-  };
+// In createCrudController.js - Make sure getOwnerScope is defined correctly
+const getOwnerScope = (req) => {
+  console.log('getOwnerScope called with role:', req.user?.role);
+  const field = ownerScopes[req.user?.role];
+  console.log('Field from ownerScopes:', field);
+  if (field) {
+    const scope = { [field]: req.user._id };
+    console.log('Returning scope:', scope);
+    return scope;
+  }
+  console.log('No scope returned');
+  return null;
+};
 
   const buildFilter = (req) => {
     const filter = {};
