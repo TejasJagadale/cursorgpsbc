@@ -82,12 +82,12 @@
 //     path => Model.schema.paths[path].isRequired
 //   );
 //   console.log('Required fields:', requiredFields);
-  
+
 //   const missingFields = requiredFields.filter(field => {
 //     const value = body[field];
 //     return value === undefined || value === null || value === '';
 //   });
-  
+
 //   if (missingFields.length > 0) {
 //     console.log('Missing required fields:', missingFields);
 //     throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
@@ -97,7 +97,7 @@
 //   try {
 //     const document = await Model.create(body);
 //     console.log('Document created:', document._id);
-    
+
 //     if (afterCreate) {
 //       console.log('Calling afterCreate hook...');
 //       await afterCreate(document, req);
@@ -253,66 +253,76 @@ export function createCrudController(Model, options = {}) {
   };
 
   return {
-create: asyncHandler(async (req, res) => {
-  console.log('=== CREATE CONTROLLER START ===');
-  let body = { ...req.body };
-  console.log('Original body:', JSON.stringify(body, null, 2));
-  console.log('User role:', req.user?.role);
-  console.log('User ID:', req.user?._id);
+    create: asyncHandler(async (req, res) => {
+      console.log('=== CREATE CONTROLLER START ===');
+      let body = { ...req.body };
+      console.log('Original body:', JSON.stringify(body, null, 2));
+      console.log('User role:', req.user?.role);
+      console.log('User ID:', req.user?._id);
 
-  // Force ownership on create too — never trust the client's dealerId/parentId.
-  const scope = getOwnerScope(req);
-  console.log('Owner scope:', scope);
-  if (scope) {
-    Object.assign(body, scope);
-    console.log('After applying owner scope:', JSON.stringify(body, null, 2));
-  }
+      // Force ownership on create
+      const scope = getOwnerScope(req);
+      console.log('Owner scope:', scope);
+      if (scope) {
+        Object.assign(body, scope);
+        console.log('After applying owner scope:', JSON.stringify(body, null, 2));
+      }
 
-  if (transformCreate) {
-    console.log('Calling transformCreate...');
-    body = await transformCreate(body, req);
-    console.log('After transformCreate:', JSON.stringify(body, null, 2));
-  }
+      // Check required fields for UserAccess model
+      const requiredFields = ['dealerId', 'ownerUserId', 'sharedUserId', 'createdBy'];
+      const missingFields = requiredFields.filter(field => !body[field]);
 
-  // Note: we intentionally don't do a manual "required fields" pre-check here.
-  // Model.schema.paths flattens nested/grouped subdocuments (e.g. LicensePackage's
-  // `duration` becomes `duration.value` / `duration.unit`), but the submitted body
-  // still nests that data under `body.duration.value` — so a flat `body[field]`
-  // lookup on a dotted path is always undefined and incorrectly flags present data
-  // as missing. Mongoose's own schema validation (triggered by Model.create below)
-  // already handles nested paths, defaults, and required checks correctly, and the
-  // global error handler formats ValidationErrors per-field for the client.
-  console.log('Creating document...');
-  try {
-    const document = await Model.create(body);
-    console.log('Document created:', document._id);
-    
-    if (afterCreate) {
-      console.log('Calling afterCreate hook...');
-      await afterCreate(document, req);
-      console.log('afterCreate hook completed');
-    } else {
-      console.log('No afterCreate hook defined');
-    }
+      if (missingFields.length > 0) {
+        console.error('Missing required fields:', missingFields);
+        throw ApiError.badRequest(`Missing required fields: ${missingFields.join(', ')}`);
+      }
 
-    let result = document;
+      // Validate ObjectIds
+      const objectIdFields = ['dealerId', 'ownerUserId', 'sharedUserId', 'createdBy'];
+      const invalidIds = objectIdFields.filter(field =>
+        body[field] && !mongoose.Types.ObjectId.isValid(body[field])
+      );
 
-    if (select || populate.length > 0) {
-      result = await applyPopulate(Model.findById(document._id).select(select));
-    }
+      if (invalidIds.length > 0) {
+        console.error('Invalid ObjectIds:', invalidIds);
+        throw ApiError.badRequest(`Invalid ObjectIds for fields: ${invalidIds.join(', ')}`);
+      }
 
-    console.log('=== CREATE CONTROLLER END ===');
-    res.status(201).json(ApiResponse.success(result, 'Created successfully'));
-  } catch (error) {
-    console.error('Error creating document:', error);
-    console.error('Error details:', {
-      message: error.message,
-      stack: error.stack,
-      errors: error.errors
-    });
-    throw error;
-  }
-}),
+      if (transformCreate) {
+        console.log('Calling transformCreate...');
+        body = await transformCreate(body, req);
+        console.log('After transformCreate:', JSON.stringify(body, null, 2));
+      }
+
+      console.log('Creating document...');
+      try {
+        const document = await Model.create(body);
+        console.log('Document created:', document._id);
+
+        if (afterCreate) {
+          console.log('Calling afterCreate hook...');
+          await afterCreate(document, req);
+          console.log('afterCreate hook completed');
+        }
+
+        let result = document;
+
+        if (select || populate.length > 0) {
+          result = await applyPopulate(Model.findById(document._id).select(select));
+        }
+
+        console.log('=== CREATE CONTROLLER END ===');
+        res.status(201).json(ApiResponse.success(result, 'Created successfully'));
+      } catch (error) {
+        console.error('Error creating document:', error);
+        console.error('Error details:', {
+          message: error.message,
+          stack: error.stack,
+          errors: error.errors
+        });
+        throw error;
+      }
+    }),
 
     getAll: asyncHandler(async (req, res) => {
       const { page, limit, skip } = getPagination(req.query);
