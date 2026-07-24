@@ -236,17 +236,23 @@ const getOwnerScope = (req) => {
   const buildFilter = (req) => {
     const filter = {};
 
-    filterableFields.forEach((field) => {
-      if (req.query[field] !== undefined && req.query[field] !== '') {
+  filterableFields.forEach((field) => {
+    if (req.query[field] !== undefined && req.query[field] !== '') {
+      // Special handling for resourceId - convert to ObjectId
+      if (field === 'resourceId' && mongoose.Types.ObjectId.isValid(req.query[field])) {
+        filter[field] = new mongoose.Types.ObjectId(req.query[field]);
+      } else {
         filter[field] = req.query[field];
       }
-    });
-
-    if (req.query.search && searchableFields.length > 0) {
-      filter.$or = searchableFields.map((field) => ({
-        [field]: { $regex: req.query.search, $options: 'i' },
-      }));
     }
+  });
+
+  if (req.query.search && searchableFields.length > 0) {
+    filter.$or = searchableFields.map((field) => ({
+      [field]: { $regex: req.query.search, $options: 'i' },
+    }));
+  }
+
 
     // Ownership scope always wins over any client-supplied value for that field —
     // a scoped role cannot override it via query params.

@@ -3,5 +3,5 @@ import { createCrudController } from '../utils/createCrudController.js';
 
 export const resourceAccessController = createCrudController(ResourceAccess, {
   populate: ['dealerId', 'ownerUserId', 'sharedUserId', 'createdBy'],
-  filterableFields: ['dealerId', 'ownerUserId', 'sharedUserId', 'resourceType', 'status'],
+  filterableFields: ['dealerId', 'ownerUserId', 'sharedUserId', 'resourceType', 'status', 'resourceId'], // Add resourceId here
 });
