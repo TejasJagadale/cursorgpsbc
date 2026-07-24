@@ -9,11 +9,15 @@ import mongoose from 'mongoose';
 export const subUserController = {
   // Get sub-users with access (role-based)
   getSubUsersWithAccess: asyncHandler(async (req, res) => {
+        console.log('=== FETCHING SUB-USERS FROM USER_ACCESS ===');
+    console.log('Query params:', req.query);
+    console.log('User role:', req.user?.role);
+    console.log('User ID:', req.user?._id);
     const { ownerUserId, status, dealerId } = req.query;
     const user = req.user;
     
     let filter = {};
-
+console.log('Initial filter:', filter);
     // Role-based filtering
     if (user.role === 'USER') {
       // USER can only see their own sub-users
@@ -21,10 +25,12 @@ export const subUserController = {
         throw ApiError.forbidden('You can only access your own sub-users');
       }
       filter.ownerUserId = user._id;
+      console.log('USER filter applied - ownerUserId:', user._id);
     } else if (user.role === 'DEALER') {
       // DEALER can see sub-users for their dealer
       if (dealerId) {
         filter.dealerId = dealerId;
+        console.log('DEALER filter applied - dealerId:', filter.dealerId);
       } else if (user.dealerId) {
         filter.dealerId = user.dealerId;
       } else {
@@ -38,17 +44,28 @@ export const subUserController = {
       if (dealerId) {
         filter.dealerId = dealerId;
       }
+       console.log('ADMIN filter applied:', filter);
     }
 
     // Add status filter if provided
     if (status) {
       filter.status = status;
+      console.log('Status filter applied:', status);
     }
 
     const accessRecords = await UserAccess.find(filter)
       .populate('sharedUserId')
       .populate('ownerUserId')
       .populate('dealerId');
+
+       console.log(`Found ${accessRecords.length} records in user_access table`);
+    console.log('First record sample:', accessRecords[0] ? {
+      _id: accessRecords[0]._id,
+      ownerUserId: accessRecords[0].ownerUserId,
+      sharedUserId: accessRecords[0].sharedUserId,
+      status: accessRecords[0].status,
+      dealerId: accessRecords[0].dealerId
+    } : 'No records found');
 
     // Build response
     const result = accessRecords.map(record => ({
@@ -61,6 +78,7 @@ export const subUserController = {
       owner: record.ownerUserId,
       dealer: record.dealerId
     }));
+     console.log('Returning result with', result.length, 'items');
 
     res.json(ApiResponse.success(result, 'Sub-users retrieved successfully'));
   }),
