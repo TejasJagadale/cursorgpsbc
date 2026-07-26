@@ -16,6 +16,7 @@ import deviceRoutes from './device.routes.js';
 import deviceAssignmentRoutes from './deviceAssignment.routes.js';
 import notificationRoutes from './notification.routes.js';
 import orderRoutes from './order.routes.js';
+import reportsRoutes from './reportsRoutes.js';
 
 const router = Router();
 
@@ -46,5 +47,6 @@ router.use('/resource-access', resourceAccessRoutes);
 router.use('/devices', deviceRoutes);
 router.use('/device-assignments', deviceAssignmentRoutes);
 router.use('/orders', orderRoutes);
+router.use('/api/reports', reportsRoutes);
 
 export default router;

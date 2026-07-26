@@ -2,8 +2,8 @@
 import { Router } from 'express';
 import { getLicenseSummary, getLicenseTrend, getVehicleStatusSummary } from '../controllers/reportsController.js';
 // Adjust these two imports to match your actual auth middleware file names/paths.
-import { protect } from '../middleware/authMiddleware.js';
-import { authorizeRoles } from '../middleware/roleMiddleware.js';
+import { protect } from '../middlewares/auth.middleware.js';
+import { authorizeRoles } from '../middlewares/authorize.middleware.js';
 
 const router = Router();
 
