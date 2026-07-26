@@ -8,11 +8,11 @@ export const orderController = createCrudController(Order, {
   filterableFields: ['dealerId', 'userId', 'orderType', 'paymentStatus', 'orderStatus', 'status'],
   ownerScopes: {
     DEALER: 'dealerId',
-    USER: 'dealerId', // USERs see orders for their dealer
-    SUB_USER: 'dealerId', // SUB_USERs see orders for their dealer
+    USER: 'dealerId',
+    SUB_USER: 'dealerId',
   },
   transformCreate: async (body, req) => {
-    // Set createdBy to current user
+    // Set createdBy only if user exists, otherwise leave as null
     if (req.user) {
       body.createdBy = req.user._id;
       
@@ -25,6 +25,14 @@ export const orderController = createCrudController(Order, {
     // Ensure dealerId is set
     if (!body.dealerId) {
       throw new Error('dealerId is required for orders');
+    }
+    
+    // Set default values if not provided
+    if (!body.paymentStatus) {
+      body.paymentStatus = 'COMPLETED';
+    }
+    if (!body.orderStatus) {
+      body.orderStatus = 'COMPLETED';
     }
     
     return body;

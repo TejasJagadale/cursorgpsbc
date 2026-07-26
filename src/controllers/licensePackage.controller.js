@@ -35,11 +35,6 @@ export const licensePackageController = createCrudController(LicensePackage, {
   transformCreate: async (body, req) => {
     console.log('=== LICENSE PACKAGE TRANSFORM CREATE ===');
     console.log('Original body:', JSON.stringify(body, null, 2));
-    console.log('User:', req.user ? {
-      _id: req.user._id,
-      role: req.user.role,
-      name: req.user.name
-    } : 'No user');
 
     // Ensure dealerId is properly set
     if (body.dealerId) {
@@ -57,6 +52,7 @@ export const licensePackageController = createCrudController(LicensePackage, {
       console.log('DEALER role - forced dealerId:', body.dealerId);
     }
 
+    // Set createdBy only if user exists
     if (req.user) {
       body.createdBy = req.user._id;
     }
@@ -74,7 +70,6 @@ export const licensePackageController = createCrudController(LicensePackage, {
     };
 
     console.log('Final body after transform:', JSON.stringify(body, null, 2));
-    console.log('=== LICENSE PACKAGE TRANSFORM END ===');
     return body;
   },
   afterCreate: async (document, req) => {
@@ -96,7 +91,7 @@ export const licensePackageController = createCrudController(LicensePackage, {
         orderStatus: 'COMPLETED',
         description: `License Package: ${document.packageName} (${document.packageCode})`,
         notes: req.body.notes || '',
-        createdBy: req.user?._id || document.createdBy,
+        createdBy: req.user?._id || null, // Allow null
       };
       
       // Generate order number

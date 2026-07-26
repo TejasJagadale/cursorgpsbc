@@ -51,12 +51,12 @@ const orderSchema = new mongoose.Schema(
     paymentStatus: {
       type: String,
       enum: ['PENDING', 'COMPLETED', 'FAILED', 'REFUNDED'],
-      default: 'PENDING',
+      default: 'COMPLETED', // Changed to COMPLETED by default
     },
     orderStatus: {
       type: String,
       enum: ['PENDING', 'PROCESSING', 'COMPLETED', 'CANCELLED'],
-      default: 'PENDING',
+      default: 'COMPLETED', // Changed to COMPLETED by default
     },
     description: {
       type: String,
@@ -69,7 +69,7 @@ const orderSchema = new mongoose.Schema(
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
+      default: null, // Make it optional
     },
     status: {
       type: String,

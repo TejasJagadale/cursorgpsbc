@@ -60,14 +60,14 @@ export const licenseController = createCrudController(License, {
           orderType: 'USER_ACTIVATION',
           licenseId: document._id,
           packageId: document.packageId,
-          amount: 0, // Amount may come from package
+          amount: 0,
           paymentMode: req.body.paymentMode || 'ONLINE',
           transactionReference: req.body.transactionReference || '',
           paymentStatus: 'COMPLETED',
           orderStatus: 'COMPLETED',
           description: `User Activation: License for user ${document.userId}`,
           notes: req.body.notes || 'License activation for user',
-          createdBy: req.user?._id || document.activatedBy,
+          createdBy: req.user?._id || null, // Allow null
         };
         
         // Get package price if available
