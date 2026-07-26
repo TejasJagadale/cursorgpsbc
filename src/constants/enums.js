@@ -60,3 +60,35 @@ export const ResourceType = {
   VEHICLE_GROUP: 'VEHICLE_GROUP',
   VEHICLE: 'VEHICLE',
 };
+
+// constants/enums.js - Add these new enums
+
+export const OrderType = {
+  LICENSE_PACKAGE: 'LICENSE_PACKAGE',
+  USER_ACTIVATION: 'USER_ACTIVATION',
+  LICENSE_RENEWAL: 'LICENSE_RENEWAL',
+};
+
+export const PaymentMode = {
+  CASH: 'CASH',
+  CARD: 'CARD',
+  UPI: 'UPI',
+  BANK_TRANSFER: 'BANK_TRANSFER',
+  CHEQUE: 'CHEQUE',
+  ONLINE: 'ONLINE',
+  OTHER: 'OTHER',
+};
+
+export const PaymentStatus = {
+  PENDING: 'PENDING',
+  COMPLETED: 'COMPLETED',
+  FAILED: 'FAILED',
+  REFUNDED: 'REFUNDED',
+};
+
+export const OrderStatus = {
+  PENDING: 'PENDING',
+  PROCESSING: 'PROCESSING',
+  COMPLETED: 'COMPLETED',
+  CANCELLED: 'CANCELLED',
+};
