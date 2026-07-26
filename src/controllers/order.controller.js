@@ -1,7 +1,7 @@
 // controllers/order.controller.js
 import { Order } from '../models/Order.js';
-import { createCrudController } from '../utils/createCrudController.js';
 import { ApiError } from '../utils/ApiError.js';
+import mongoose from 'mongoose';
 
 export const orderController = {
   // Get all orders with role-based filtering
@@ -13,40 +13,70 @@ export const orderController = {
       // Build filter
       const filter = { ...filters };
       
-      // Role-based filtering
+      console.log('User role:', req.user?.role);
+      console.log('User ID:', req.user?._id);
+      console.log('User dealerId:', req.user?.dealerId);
+      
+      // Role-based filtering - CRITICAL FIX
       if (req.user.role === 'ADMIN') {
-        // Admin sees all orders
-        // No additional filter needed
-      } else if (req.user.role === 'DEALER') {
-        // Dealer sees orders for their dealership
+        // Admin sees ALL orders - no filter needed
+        console.log('ADMIN: Showing all orders');
+      } 
+      else if (req.user.role === 'DEALER') {
+        // Dealer sees ONLY orders for their dealership
         filter.dealerId = req.user._id;
-      } else if (req.user.role === 'USER') {
-        // User sees orders for their dealer and their own orders
-        const dealerId = req.user.dealerId?._id || req.user.dealerId;
+        console.log('DEALER: Filtering by dealerId:', req.user._id);
+      } 
+      else if (req.user.role === 'USER') {
+        // User sees orders for their dealer AND their own orders
+        const dealerId = typeof req.user.dealerId === 'object' 
+          ? req.user.dealerId?._id 
+          : req.user.dealerId;
+        
+        console.log('USER: DealerId from user:', dealerId);
+        console.log('USER: User ID:', req.user._id);
+        
         if (dealerId) {
           filter.$or = [
             { dealerId: dealerId },
             { userId: req.user._id }
           ];
+          console.log('USER: Filtering by dealerId OR userId');
         } else {
           filter.userId = req.user._id;
+          console.log('USER: Filtering by userId only');
         }
-      } else if (req.user.role === 'SUB_USER') {
+      } 
+      else if (req.user.role === 'SUB_USER') {
         // Sub-user sees orders for their dealer
-        const dealerId = req.user.dealerId?._id || req.user.dealerId;
+        const dealerId = typeof req.user.dealerId === 'object' 
+          ? req.user.dealerId?._id 
+          : req.user.dealerId;
+        
+        console.log('SUB_USER: DealerId from user:', dealerId);
+        
         if (dealerId) {
           filter.dealerId = dealerId;
+          console.log('SUB_USER: Filtering by dealerId');
         } else {
-          // If no dealer, show empty
+          // If no dealer, return empty
+          console.log('SUB_USER: No dealerId found, returning empty');
           return res.json({
             success: true,
             data: [],
-            meta: { total: 0, page: 1, limit: 10 }
+            meta: { 
+              total: 0, 
+              page: parseInt(page), 
+              limit: parseInt(limit),
+              pages: 0
+            }
           });
         }
       }
       
-      // Get orders
+      console.log('Final filter:', JSON.stringify(filter, null, 2));
+      
+      // Get orders with filter
       const orders = await Order.find(filter)
         .populate('dealerId userId packageId licenseId createdBy')
         .sort({ createdAt: -1 })
@@ -54,6 +84,8 @@ export const orderController = {
         .limit(parseInt(limit));
       
       const total = await Order.countDocuments(filter);
+      
+      console.log(`Found ${orders.length} orders for ${req.user.role}`);
       
       res.json({
         success: true,
@@ -66,6 +98,7 @@ export const orderController = {
         }
       });
     } catch (error) {
+      console.error('Error in orderController.getAll:', error);
       next(error);
     }
   },
@@ -83,11 +116,39 @@ export const orderController = {
       }
       
       // Check if user has access to this order
-      const hasAccess = 
-        req.user.role === 'ADMIN' ||
-        order.dealerId._id.toString() === req.user._id.toString() ||
-        order.userId?._id.toString() === req.user._id.toString() ||
-        (req.user.dealerId && order.dealerId._id.toString() === req.user.dealerId.toString());
+      let hasAccess = false;
+      
+      if (req.user.role === 'ADMIN') {
+        hasAccess = true;
+      } else if (req.user.role === 'DEALER') {
+        const dealerId = typeof order.dealerId === 'object' 
+          ? order.dealerId?._id 
+          : order.dealerId;
+        hasAccess = dealerId?.toString() === req.user._id.toString();
+      } else if (req.user.role === 'USER') {
+        const dealerId = typeof order.dealerId === 'object' 
+          ? order.dealerId?._id 
+          : order.dealerId;
+        const userId = typeof order.userId === 'object' 
+          ? order.userId?._id 
+          : order.userId;
+        
+        const userDealerId = typeof req.user.dealerId === 'object' 
+          ? req.user.dealerId?._id 
+          : req.user.dealerId;
+        
+        hasAccess = 
+          userId?.toString() === req.user._id.toString() ||
+          (userDealerId && dealerId?.toString() === userDealerId.toString());
+      } else if (req.user.role === 'SUB_USER') {
+        const dealerId = typeof order.dealerId === 'object' 
+          ? order.dealerId?._id 
+          : order.dealerId;
+        const userDealerId = typeof req.user.dealerId === 'object' 
+          ? req.user.dealerId?._id 
+          : req.user.dealerId;
+        hasAccess = userDealerId && dealerId?.toString() === userDealerId.toString();
+      }
       
       if (!hasAccess) {
         throw ApiError.forbidden('You do not have access to this order');
@@ -145,9 +206,16 @@ export const orderController = {
       }
       
       // Check access
-      const hasAccess = 
-        req.user.role === 'ADMIN' ||
-        existing.dealerId.toString() === req.user._id.toString();
+      let hasAccess = false;
+      
+      if (req.user.role === 'ADMIN') {
+        hasAccess = true;
+      } else if (req.user.role === 'DEALER') {
+        const dealerId = typeof existing.dealerId === 'object' 
+          ? existing.dealerId?._id 
+          : existing.dealerId;
+        hasAccess = dealerId?.toString() === req.user._id.toString();
+      }
       
       if (!hasAccess) {
         throw ApiError.forbidden('You do not have access to update this order');
