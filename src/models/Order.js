@@ -38,6 +38,7 @@ const orderSchema = new mongoose.Schema(
       type: Number,
       required: true,
       min: 0,
+      default: 0,
     },
     paymentMode: {
       type: String,

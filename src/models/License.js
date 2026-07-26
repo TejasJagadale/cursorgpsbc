@@ -51,6 +51,11 @@ const licenseSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    amount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     paymentMode: {
       type: String,
       enum: ['CASH', 'CARD', 'UPI', 'BANK_TRANSFER', 'CHEQUE', 'ONLINE', 'OTHER'],

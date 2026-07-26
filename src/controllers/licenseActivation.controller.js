@@ -7,7 +7,7 @@ import { Vehicle } from '../models/Vehicle.js';
 import { DeviceAssignment } from '../models/DeviceAssignment.js';
 import { LicenseHistory } from '../models/LicenseHistory.js';
 import { Order } from '../models/Order.js';
-import { User } from '../models/User.js'; // <-- ADD THIS IMPORT
+import { User } from '../models/User.js';
 import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -48,17 +48,9 @@ function generateLicenseKey() {
   return `${prefix}-${timestamp}-${random}`;
 }
 
-/**
- * POST /api/v1/licenses/activate
- */
 export const activateLicense = asyncHandler(async (req, res) => {
   console.log('=== LICENSE ACTIVATION START ===');
   console.log('Request body:', JSON.stringify(req.body, null, 2));
-  console.log('User:', req.user ? {
-    _id: req.user._id,
-    role: req.user.role,
-    name: req.user.name
-  } : 'No user');
 
   const { 
     dealerId: bodyDealerId, 
@@ -70,6 +62,7 @@ export const activateLicense = asyncHandler(async (req, res) => {
     subUserId,
     paymentMode = 'ONLINE',
     transactionReference = '',
+    amount = 0, // Get amount from request
     notes = ''
   } = req.body;
 
@@ -126,21 +119,18 @@ export const activateLicense = asyncHandler(async (req, res) => {
         throw ApiError.notFound('Owner user not found');
       }
       
-      // Check if owner belongs to the dealer
       const ownerDealerId = typeof owner.dealerId === 'object' ? owner.dealerId?._id : owner.dealerId;
       if (ownerDealerId?.toString() !== dealerId.toString()) {
         throw ApiError.badRequest('Owner user does not belong to this dealer');
       }
 
       // 3. If subUserId is provided, validate it
-      let subUser = null;
       if (subUserId) {
-        subUser = await User.findById(subUserId).session(session);
+        const subUser = await User.findById(subUserId).session(session);
         if (!subUser) {
           throw ApiError.notFound('Sub-user not found');
         }
         
-        // Check if sub-user belongs to the owner
         const subParentId = typeof subUser.parentId === 'object' ? subUser.parentId?._id : subUser.parentId;
         if (subParentId?.toString() !== ownerUserId.toString()) {
           throw ApiError.badRequest('Sub-user does not belong to this owner');
@@ -201,7 +191,10 @@ export const activateLicense = asyncHandler(async (req, res) => {
       // 7. Generate license key
       const licenseKey = generateLicenseKey();
 
-      // 8. Create the license with payment fields
+      // 8. Calculate amount - use provided amount or fallback to package price
+      const finalAmount = amount > 0 ? amount : (licensePackage.price || 0);
+
+      // 9. Create the license with payment fields including amount
       const [licenseDoc] = await License.create(
         [
           {
@@ -214,9 +207,11 @@ export const activateLicense = asyncHandler(async (req, res) => {
             activatedBy,
             activatedAt: startDate,
             status: 'ACTIVE',
+            // Payment fields
+            amount: finalAmount,
             paymentMode: paymentMode,
             transactionReference: transactionReference || '',
-            orderNotes: notes || '',
+            orderNotes: notes || `Activation for ${vehicle.number}`,
             paymentStatus: 'COMPLETED',
             orderStatus: 'COMPLETED',
             orderDate: new Date(),
@@ -225,11 +220,11 @@ export const activateLicense = asyncHandler(async (req, res) => {
         { session }
       );
 
-      // 9. Link the device back to the license
+      // 10. Link the device back to the license
       deviceDoc.licenseId = licenseDoc._id;
       await deviceDoc.save({ session });
 
-      // 10. Assign the device to the vehicle
+      // 11. Assign the device to the vehicle
       await DeviceAssignment.create(
         [
           {
@@ -244,7 +239,7 @@ export const activateLicense = asyncHandler(async (req, res) => {
         { session }
       );
 
-      // 11. Record the license history entry
+      // 12. Record the license history entry
       await LicenseHistory.create(
         [
           {
@@ -260,18 +255,18 @@ export const activateLicense = asyncHandler(async (req, res) => {
         { session }
       );
 
-      // 12. Consume one seat from the package
+      // 13. Consume one seat from the package
       licensePackage.usedLicenseCount += 1;
       await licensePackage.save({ session });
 
-      // 13. Generate order number and create order
+      // 14. Generate order number and create order with amount
       const orderNumber = await generateOrderNumber();
       
       // Update license with order number
       licenseDoc.orderNumber = orderNumber;
       await licenseDoc.save({ session });
 
-      // Create order record
+      // 15. Create order record with the amount
       const [orderDoc] = await Order.create(
         [
           {
@@ -280,13 +275,13 @@ export const activateLicense = asyncHandler(async (req, res) => {
             orderType: 'USER_ACTIVATION',
             licenseId: licenseDoc._id,
             packageId: packageId,
-            amount: licensePackage.price || 0,
+            amount: finalAmount, // Store the amount in order
             paymentMode: paymentMode || 'ONLINE',
             transactionReference: transactionReference || '',
             paymentStatus: 'COMPLETED',
             orderStatus: 'COMPLETED',
-            description: `User Activation: ${licensePackage.packageName} - ${licensePackage.packageCode}`,
-            notes: notes || 'License activation for user',
+            description: `User Activation: ${licensePackage.packageName} - ${licensePackage.packageCode} for ${vehicle.number}`,
+            notes: notes || `License activation for ${vehicle.number}`,
             createdBy: activatedBy,
             orderNumber: orderNumber,
             status: 'ACTIVE',
@@ -295,7 +290,7 @@ export const activateLicense = asyncHandler(async (req, res) => {
         { session }
       );
 
-      // 14. Populate the result with all related data
+      // 16. Populate the result
       const populatedLicense = await License.findById(licenseDoc._id)
         .populate('dealerId userId packageId activatedBy')
         .session(session);
@@ -330,6 +325,7 @@ export const activateLicense = asyncHandler(async (req, res) => {
     console.log('=== LICENSE ACTIVATION SUCCESS ===');
     console.log('License ID:', result.license._id);
     console.log('Order #:', result.order.orderNumber);
+    console.log('Amount:', result.order.amount);
 
     res.status(201).json(ApiResponse.success(result, 'License activated successfully'));
   } catch (error) {
