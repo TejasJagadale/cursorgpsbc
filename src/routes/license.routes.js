@@ -1,9 +1,12 @@
 // routes/license.routes.js
 import { Router } from 'express';
 import { licenseController } from '../controllers/license.controller.js';
-import { authorize } from '../middlewares/auth.middleware.js';
+import { authenticate, authorize } from '../middlewares/auth.middleware.js';
 
 const router = Router();
+
+// Apply authentication to all routes
+router.use(authenticate);
 
 // GET all licenses with order data
 router.get('/', authorize(['ADMIN', 'DEALER', 'USER', 'SUB_USER']), licenseController.getAll);

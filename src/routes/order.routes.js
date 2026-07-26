@@ -1,13 +1,14 @@
 // routes/order.routes.js
-import { orderController } from '../controllers/order.controller.js';
-import { createCrudRoutes } from './createCrudRoutes.js';
-import { authorize } from '../middlewares/auth.middleware.js';
 import { Router } from 'express';
+import { orderController } from '../controllers/order.controller.js';
+import { authenticate, authorize } from '../middlewares/auth.middleware.js';
+import { getPagination } from '../utils/pagination.js';
+import { Order } from '../models/Order.js';
 
 const router = Router();
 
-// Use the CRUD routes
-const crudRoutes = createCrudRoutes(orderController);
+// Apply authentication to all routes
+router.use(authenticate);
 
 // Custom route for getting orders by user/dealer
 router.get('/my-orders', authorize(['ADMIN', 'DEALER', 'USER', 'SUB_USER']), async (req, res) => {
@@ -53,7 +54,11 @@ router.get('/my-orders', authorize(['ADMIN', 'DEALER', 'USER', 'SUB_USER']), asy
   }
 });
 
-// Use all CRUD routes
-router.use('/', crudRoutes);
+// Use CRUD routes
+router.get('/', authorize(['ADMIN', 'DEALER']), orderController.getAll);
+router.get('/:id', authorize(['ADMIN', 'DEALER']), orderController.getById);
+router.post('/', authorize(['ADMIN', 'DEALER']), orderController.create);
+router.patch('/:id', authorize(['ADMIN', 'DEALER']), orderController.update);
+router.delete('/:id', authorize(['ADMIN']), orderController.remove);
 
 export default router;

@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { authenticate } from '../middlewares/auth.middleware.js';
 import authRoutes from './auth.routes.js';
 import userRoutes from './user.routes.js';
-import subUserRoutes from './subUser.routes.js'; // Make sure this import exists
+import subUserRoutes from './subUser.routes.js';
 import licensePackageRoutes from './licensePackage.routes.js';
 import licenseRoutes from './license.routes.js';
 import licenseHistoryRoutes from './licenseHistory.routes.js';
@@ -15,6 +15,7 @@ import resourceAccessRoutes from './resourceAccess.routes.js';
 import deviceRoutes from './device.routes.js';
 import deviceAssignmentRoutes from './deviceAssignment.routes.js';
 import notificationRoutes from './notification.routes.js';
+import orderRoutes from './order.routes.js';
 
 const router = Router();
 
@@ -28,10 +29,11 @@ router.get('/health', (_req, res) => {
 
 router.use('/auth', authRoutes);
 
+// Apply authentication to all routes below
 router.use(authenticate);
 
 router.use('/users', userRoutes);
-router.use('/sub-users', subUserRoutes); // This line must exist
+router.use('/sub-users', subUserRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/license-packages', licensePackageRoutes);
 router.use('/licenses', licenseRoutes);
@@ -43,5 +45,6 @@ router.use('/user-access', userAccessRoutes);
 router.use('/resource-access', resourceAccessRoutes);
 router.use('/devices', deviceRoutes);
 router.use('/device-assignments', deviceAssignmentRoutes);
+router.use('/orders', orderRoutes);
 
 export default router;

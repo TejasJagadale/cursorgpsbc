@@ -38,3 +38,29 @@ export const authenticate = async (req, res, next) => {
     }
   }
 };
+
+// Add the authorize middleware
+export const authorize = (roles = []) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return next(ApiError.unauthorized('Authentication required'));
+    }
+    
+    // If roles array is empty, allow all authenticated users
+    if (roles.length === 0) {
+      return next();
+    }
+    
+    // Check if user's role is in the allowed roles
+    if (!roles.includes(req.user.role)) {
+      return next(ApiError.forbidden(`Access denied. Required roles: ${roles.join(', ')}`));
+    }
+    
+    next();
+  };
+};
+
+// Optional: Add convenience functions for specific role checks
+export const isAdmin = authorize(['ADMIN']);
+export const isDealer = authorize(['DEALER']);
+export const isUser = authorize(['USER', 'ADMIN', 'DEALER']);
