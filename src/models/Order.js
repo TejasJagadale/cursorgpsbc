@@ -51,12 +51,12 @@ const orderSchema = new mongoose.Schema(
     paymentStatus: {
       type: String,
       enum: ['PENDING', 'COMPLETED', 'FAILED', 'REFUNDED'],
-      default: 'COMPLETED', // Changed to COMPLETED by default
+      default: 'COMPLETED',
     },
     orderStatus: {
       type: String,
       enum: ['PENDING', 'PROCESSING', 'COMPLETED', 'CANCELLED'],
-      default: 'COMPLETED', // Changed to COMPLETED by default
+      default: 'COMPLETED',
     },
     description: {
       type: String,
@@ -69,7 +69,7 @@ const orderSchema = new mongoose.Schema(
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      default: null, // Make it optional
+      default: null,
     },
     status: {
       type: String,
@@ -92,7 +92,6 @@ orderSchema.pre('save', async function(next) {
     const day = String(date.getDate()).padStart(2, '0');
     const prefix = `ORD-${year}${month}${day}`;
     
-    // Find the last order for today
     const lastOrder = await this.constructor.findOne({
       orderNumber: { $regex: `^${prefix}` }
     }).sort({ orderNumber: -1 });

@@ -59,13 +59,6 @@ const getAllWithOrders = async (req, res, next) => {
         
         if (order) {
           pkgObj.order = order;
-          // Also update the package with order data if not present
-          if (!pkgObj.orderNumber) {
-            pkgObj.orderNumber = order.orderNumber;
-          }
-          if (!pkgObj.paymentStatus) {
-            pkgObj.paymentStatus = order.paymentStatus;
-          }
         }
         
         return pkgObj;
@@ -128,18 +121,19 @@ export const licensePackageController = {
   getAll: getAllWithOrders,
   getById: getByIdWithOrder,
   
-  // Use default CRUD for other operations
-  create: createCrudController(LicensePackage, {
-    populate: ['dealerId', 'createdBy'],
-    searchableFields: ['packageCode', 'packageName', 'description'],
-    filterableFields: ['dealerId', 'status'],
-    ownerScopes: {
-      DEALER: 'dealerId',
-    },
-    transformCreate: async (body, req) => {
-      console.log('=== LICENSE PACKAGE TRANSFORM CREATE ===');
-      console.log('Original body:', JSON.stringify(body, null, 2));
+  // Create with order creation
+  create: async (req, res, next) => {
+    try {
+      console.log('=== LICENSE PACKAGE CREATE START ===');
+      console.log('Request body:', JSON.stringify(req.body, null, 2));
+      console.log('User:', req.user ? {
+        _id: req.user._id,
+        role: req.user.role,
+        name: req.user.name
+      } : 'No user');
 
+      let body = { ...req.body };
+      
       // Ensure dealerId is properly set
       if (body.dealerId) {
         if (typeof body.dealerId === 'string') {
@@ -151,18 +145,18 @@ export const licensePackageController = {
         }
       }
 
+      // If user is DEALER, force dealerId to their own ID
       if (req.user && req.user.role === 'DEALER') {
         body.dealerId = req.user._id;
         console.log('DEALER role - forced dealerId:', body.dealerId);
       }
 
-      // ALWAYS set createdBy to current user
+      // Set createdBy to current user
       if (req.user && req.user._id) {
         body.createdBy = req.user._id;
         console.log('Set createdBy to:', body.createdBy);
       } else {
         if (!body.createdBy) {
-          console.error('No createdBy found!');
           throw new Error('createdBy is required');
         }
       }
@@ -179,60 +173,187 @@ export const licensePackageController = {
       body.orderStatus = 'COMPLETED';
       body.orderDate = new Date();
 
-      console.log('Final body after transform:', JSON.stringify(body, null, 2));
-      return body;
-    },
-    afterCreate: async (document, req) => {
-      console.log('=== AFTER CREATE HOOK ===');
-      console.log('Document:', document);
+      console.log('Creating license package with data:', JSON.stringify(body, null, 2));
+
+      // Create the license package
+      const document = await LicensePackage.create(body);
+      console.log('License package created:', document._id);
+
+      // Generate order number
+      const orderNumber = await generateOrderNumber();
       
-      try {
-        // Generate order number
-        const orderNumber = await generateOrderNumber();
-        
-        // Update the license package with order number
-        await LicensePackage.findByIdAndUpdate(document._id, {
-          orderNumber: orderNumber
-        });
-        
-        // Create order for the license package
-        const orderData = {
-          dealerId: document.dealerId,
-          userId: req.user?._id || document.createdBy,
-          orderType: 'LICENSE_PACKAGE',
-          packageId: document._id,
-          amount: document.price || 0,
-          paymentMode: document.paymentMode || 'ONLINE',
-          transactionReference: document.transactionReference || '',
-          paymentStatus: 'COMPLETED',
-          orderStatus: 'COMPLETED',
-          description: `License Package: ${document.packageName} (${document.packageCode})`,
-          notes: document.orderNotes || '',
-          createdBy: req.user?._id || document.createdBy || null,
-          orderNumber: orderNumber,
-        };
-        
-        console.log('Creating order with data:', orderData);
-        
-        const order = await Order.create(orderData);
-        console.log('Order created:', order._id);
-        
-        // Update the package with the order ID
-        await LicensePackage.findByIdAndUpdate(document._id, {
-          orderId: order._id
-        });
-        
-        return order;
-      } catch (error) {
-        console.error('Error creating order for license package:', error);
+      // Update the license package with order number
+      await LicensePackage.findByIdAndUpdate(document._id, {
+        orderNumber: orderNumber
+      });
+
+      // Create order for the license package
+      const orderData = {
+        dealerId: document.dealerId,
+        userId: req.user?._id || document.createdBy,
+        orderType: 'LICENSE_PACKAGE',
+        packageId: document._id,
+        amount: document.price || 0,
+        paymentMode: document.paymentMode || 'ONLINE',
+        transactionReference: document.transactionReference || '',
+        paymentStatus: 'COMPLETED',
+        orderStatus: 'COMPLETED',
+        description: `License Package: ${document.packageName} (${document.packageCode})`,
+        notes: document.orderNotes || '',
+        createdBy: req.user?._id || document.createdBy || null,
+        orderNumber: orderNumber,
+        status: 'ACTIVE',
+      };
+
+      console.log('Creating order with data:', JSON.stringify(orderData, null, 2));
+
+      const order = await Order.create(orderData);
+      console.log('Order created:', order._id);
+
+      // Update the package with the order ID
+      await LicensePackage.findByIdAndUpdate(document._id, {
+        orderId: order._id
+      });
+
+      // Populate the result
+      const result = await LicensePackage.findById(document._id)
+        .populate('dealerId createdBy');
+
+      const populatedOrder = await Order.findById(order._id)
+        .populate('createdBy');
+
+      const responseData = result.toObject();
+      responseData.order = populatedOrder;
+
+      console.log('=== LICENSE PACKAGE CREATE SUCCESS ===');
+      console.log('Package ID:', document._id);
+      console.log('Order #:', order.orderNumber);
+
+      res.status(201).json({
+        success: true,
+        message: 'License package created successfully',
+        data: responseData
+      });
+
+    } catch (error) {
+      console.error('Error creating license package:', error);
+      next(error);
+    }
+  },
+  
+  // Update
+  update: async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const body = { ...req.body };
+      
+      // If user is DEALER, ensure they can only update their own packages
+      if (req.user && req.user.role === 'DEALER') {
+        const existing = await LicensePackage.findById(id);
+        if (!existing) {
+          return res.status(404).json({
+            success: false,
+            message: 'License package not found'
+          });
+        }
+        if (existing.dealerId.toString() !== req.user._id.toString()) {
+          return res.status(403).json({
+            success: false,
+            message: 'You can only update your own packages'
+          });
+        }
       }
-    },
-  }).create,
+      
+      const document = await LicensePackage.findByIdAndUpdate(
+        id,
+        body,
+        { new: true, runValidators: true }
+      ).populate('dealerId createdBy');
+      
+      if (!document) {
+        return res.status(404).json({
+          success: false,
+          message: 'License package not found'
+        });
+      }
+      
+      // Update the order if it exists
+      const order = await Order.findOne({
+        packageId: document._id,
+        orderType: 'LICENSE_PACKAGE'
+      });
+      
+      if (order) {
+        order.amount = document.price || 0;
+        order.description = `License Package: ${document.packageName} (${document.packageCode})`;
+        order.paymentMode = document.paymentMode || 'ONLINE';
+        order.transactionReference = document.transactionReference || '';
+        order.notes = document.orderNotes || '';
+        await order.save();
+        
+        const responseData = document.toObject();
+        responseData.order = await Order.findById(order._id).populate('createdBy');
+        
+        return res.json({
+          success: true,
+          message: 'License package updated successfully',
+          data: responseData
+        });
+      }
+      
+      res.json({
+        success: true,
+        message: 'License package updated successfully',
+        data: document
+      });
+      
+    } catch (error) {
+      console.error('Error updating license package:', error);
+      next(error);
+    }
+  },
   
-  // Use default update and delete
-  update: createCrudController(LicensePackage, {
-    populate: ['dealerId', 'createdBy'],
-  }).update,
-  
-  remove: createCrudController(LicensePackage, {}).remove,
+  // Delete
+  remove: async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      
+      // Check if package exists
+      const existing = await LicensePackage.findById(id);
+      if (!existing) {
+        return res.status(404).json({
+          success: false,
+          message: 'License package not found'
+        });
+      }
+      
+      // If user is DEALER, ensure they can only delete their own packages
+      if (req.user && req.user.role === 'DEALER') {
+        if (existing.dealerId.toString() !== req.user._id.toString()) {
+          return res.status(403).json({
+            success: false,
+            message: 'You can only delete your own packages'
+          });
+        }
+      }
+      
+      // Delete the order as well
+      await Order.findOneAndDelete({
+        packageId: id,
+        orderType: 'LICENSE_PACKAGE'
+      });
+      
+      // Delete the package
+      await LicensePackage.findByIdAndDelete(id);
+      
+      res.json({
+        success: true,
+        message: 'License package deleted successfully'
+      });
+      
+    } catch (error) {
+      console.error('Error deleting license package:', error);
+      next(error);
+    }
+  },
 };
