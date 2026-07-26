@@ -28,7 +28,7 @@ export const orderController = {
         console.log('DEALER: Filtering by dealerId:', req.user._id);
       } 
       else if (req.user.role === 'USER') {
-        // User sees orders for their dealer AND their own orders
+        // User sees ONLY USER_ACTIVATION orders for their dealer AND their own orders
         const dealerId = typeof req.user.dealerId === 'object' 
           ? req.user.dealerId?._id 
           : req.user.dealerId;
@@ -36,19 +36,28 @@ export const orderController = {
         console.log('USER: DealerId from user:', dealerId);
         console.log('USER: User ID:', req.user._id);
         
+        // IMPORTANT: Users should only see USER_ACTIVATION orders
+        // They should NOT see LICENSE_PACKAGE orders (those are for admins)
+        const orderFilter = {
+          orderType: 'USER_ACTIVATION'
+        };
+        
         if (dealerId) {
-          filter.$or = [
+          orderFilter.$or = [
             { dealerId: dealerId },
             { userId: req.user._id }
           ];
-          console.log('USER: Filtering by dealerId OR userId');
+          console.log('USER: Filtering by dealerId OR userId with USER_ACTIVATION only');
         } else {
-          filter.userId = req.user._id;
-          console.log('USER: Filtering by userId only');
+          orderFilter.userId = req.user._id;
+          console.log('USER: Filtering by userId only with USER_ACTIVATION only');
         }
+        
+        // Apply the combined filter
+        Object.assign(filter, orderFilter);
       } 
       else if (req.user.role === 'SUB_USER') {
-        // Sub-user sees orders for their dealer
+        // Sub-user sees ONLY USER_ACTIVATION orders for their dealer
         const dealerId = typeof req.user.dealerId === 'object' 
           ? req.user.dealerId?._id 
           : req.user.dealerId;
@@ -56,8 +65,10 @@ export const orderController = {
         console.log('SUB_USER: DealerId from user:', dealerId);
         
         if (dealerId) {
+          // SUB_USER should only see USER_ACTIVATION orders
+          filter.orderType = 'USER_ACTIVATION';
           filter.dealerId = dealerId;
-          console.log('SUB_USER: Filtering by dealerId');
+          console.log('SUB_USER: Filtering by dealerId with USER_ACTIVATION only');
         } else {
           // If no dealer, return empty
           console.log('SUB_USER: No dealerId found, returning empty');
@@ -137,9 +148,14 @@ export const orderController = {
           ? req.user.dealerId?._id 
           : req.user.dealerId;
         
+        // Users can only view USER_ACTIVATION orders
+        const isUserActivation = order.orderType === 'USER_ACTIVATION';
+        
         hasAccess = 
-          userId?.toString() === req.user._id.toString() ||
-          (userDealerId && dealerId?.toString() === userDealerId.toString());
+          isUserActivation && (
+            userId?.toString() === req.user._id.toString() ||
+            (userDealerId && dealerId?.toString() === userDealerId.toString())
+          );
       } else if (req.user.role === 'SUB_USER') {
         const dealerId = typeof order.dealerId === 'object' 
           ? order.dealerId?._id 
@@ -147,7 +163,11 @@ export const orderController = {
         const userDealerId = typeof req.user.dealerId === 'object' 
           ? req.user.dealerId?._id 
           : req.user.dealerId;
-        hasAccess = userDealerId && dealerId?.toString() === userDealerId.toString();
+        
+        // Sub-users can only view USER_ACTIVATION orders
+        const isUserActivation = order.orderType === 'USER_ACTIVATION';
+        
+        hasAccess = isUserActivation && userDealerId && dealerId?.toString() === userDealerId.toString();
       }
       
       if (!hasAccess) {
