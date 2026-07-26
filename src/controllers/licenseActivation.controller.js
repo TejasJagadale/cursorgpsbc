@@ -188,6 +188,7 @@
 // });
 
 
+// controllers/licenseActivation.controller.js
 import mongoose from 'mongoose';
 import { License } from '../models/License.js';
 import { LicensePackage } from '../models/LicensePackage.js';
@@ -195,15 +196,53 @@ import { Device } from '../models/Device.js';
 import { Vehicle } from '../models/Vehicle.js';
 import { DeviceAssignment } from '../models/DeviceAssignment.js';
 import { LicenseHistory } from '../models/LicenseHistory.js';
+import { Order } from '../models/Order.js';
 import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+
+// Duration unit -> the Date setter to bump when computing expiry
+const DURATION_UNIT_HANDLERS = {
+  DAY: (date, value) => date.setDate(date.getDate() + value),
+  MONTH: (date, value) => date.setMonth(date.getMonth() + value),
+  YEAR: (date, value) => date.setFullYear(date.getFullYear() + value),
+};
+
+// Helper function to generate order number
+async function generateOrderNumber() {
+  const date = new Date();
+  const year = date.getFullYear().toString().slice(-2);
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const prefix = `ORD-${year}${month}${day}`;
+  
+  const lastOrder = await Order.findOne({
+    orderNumber: { $regex: `^${prefix}` }
+  }).sort({ orderNumber: -1 });
+  
+  let sequence = 1;
+  if (lastOrder) {
+    const lastSeq = parseInt(lastOrder.orderNumber.slice(-4));
+    sequence = lastSeq + 1;
+  }
+  
+  return `${prefix}-${String(sequence).padStart(4, '0')}`;
+}
+
+// Helper function to generate license key
+function generateLicenseKey() {
+  const prefix = 'LCS';
+  const timestamp = Date.now().toString(36).toUpperCase();
+  const random = Math.random().toString(36).substring(2, 8).toUpperCase();
+  return `${prefix}-${timestamp}-${random}`;
+}
 
 /**
  * POST /api/v1/licenses/activate
  *
  * Body shape expected from the "License Activation" screen:
  * {
+ *   dealerId: string,
  *   packageId: string,
  *   sim: { model, imei, number },
  *   device: { imei, model, protocol, port },
@@ -212,22 +251,33 @@ import { asyncHandler } from '../utils/asyncHandler.js';
  *     customAttributes: [{ key, value }]
  *   },
  *   ownerUserId: string,
- *   subUserId?: string
+ *   subUserId?: string,
+ *   paymentMode?: string,
+ *   transactionReference?: string,
+ *   notes?: string
  * }
- *
- * req.user is assumed to be populated by the `authenticate` middleware and to
- * expose `_id` (the logged-in dealer/admin activating the license) and
- * `dealerId` (the dealer this activation belongs to).
  */
-// Duration unit -> the Date setter to bump when computing expiry
-const DURATION_UNIT_HANDLERS = {
-  DAY: (date, value) => date.setDate(date.getDate() + value),
-  MONTH: (date, value) => date.setMonth(date.getMonth() + value),
-  YEAR: (date, value) => date.setFullYear(date.getFullYear() + value),
-};
-
 export const activateLicense = asyncHandler(async (req, res) => {
-  const { dealerId: bodyDealerId, packageId, sim, device, vehicle, ownerUserId, subUserId } = req.body;
+  console.log('=== LICENSE ACTIVATION START ===');
+  console.log('Request body:', JSON.stringify(req.body, null, 2));
+  console.log('User:', req.user ? {
+    _id: req.user._id,
+    role: req.user.role,
+    name: req.user.name
+  } : 'No user');
+
+  const { 
+    dealerId: bodyDealerId, 
+    packageId, 
+    sim, 
+    device, 
+    vehicle, 
+    ownerUserId, 
+    subUserId,
+    paymentMode = 'ONLINE',
+    transactionReference = '',
+    notes = ''
+  } = req.body;
 
   // ---- basic payload validation -------------------------------------------------
   const missing = [];
@@ -250,15 +300,14 @@ export const activateLicense = asyncHandler(async (req, res) => {
     throw ApiError.badRequest(`Missing required field(s): ${missing.join(', ')}`);
   }
 
-  // The dealer this activation is for is whatever the "Dealer Selection" step
-  // on the frontend chose (form.dealerId), not something guessed from the
-  // logged-in user. For a DEALER user that value is their own id anyway (the
-  // frontend auto-selects it); for an ADMIN activating on behalf of a
-  // specific dealer, req.user has no dealerId of its own, so falling back to
-  // req.user._id here would have silently attributed the activation to the
-  // admin instead of the chosen dealer.
   const dealerId = bodyDealerId;
   const activatedBy = req.user._id;
+
+  // Validate payment mode
+  const validPaymentModes = ['CASH', 'CARD', 'UPI', 'BANK_TRANSFER', 'CHEQUE', 'ONLINE', 'OTHER'];
+  if (!validPaymentModes.includes(paymentMode)) {
+    throw ApiError.badRequest(`Invalid payment mode. Must be one of: ${validPaymentModes.join(', ')}`);
+  }
 
   const session = await mongoose.startSession();
 
@@ -277,7 +326,34 @@ export const activateLicense = asyncHandler(async (req, res) => {
         throw ApiError.badRequest('No available licenses left in this package');
       }
 
-      // 2. Create the device (SIM + device info together, one record)
+      // 2. Check if owner user exists and belongs to the dealer
+      const owner = await User.findById(ownerUserId).session(session);
+      if (!owner) {
+        throw ApiError.notFound('Owner user not found');
+      }
+      
+      // Check if owner belongs to the dealer
+      const ownerDealerId = typeof owner.dealerId === 'object' ? owner.dealerId?._id : owner.dealerId;
+      if (ownerDealerId?.toString() !== dealerId.toString()) {
+        throw ApiError.badRequest('Owner user does not belong to this dealer');
+      }
+
+      // 3. If subUserId is provided, validate it
+      let subUser = null;
+      if (subUserId) {
+        subUser = await User.findById(subUserId).session(session);
+        if (!subUser) {
+          throw ApiError.notFound('Sub-user not found');
+        }
+        
+        // Check if sub-user belongs to the owner
+        const subParentId = typeof subUser.parentId === 'object' ? subUser.parentId?._id : subUser.parentId;
+        if (subParentId?.toString() !== ownerUserId.toString()) {
+          throw ApiError.badRequest('Sub-user does not belong to this owner');
+        }
+      }
+
+      // 4. Create the device (SIM + device info together, one record)
       const [deviceDoc] = await Device.create(
         [
           {
@@ -286,17 +362,18 @@ export const activateLicense = asyncHandler(async (req, res) => {
             imei: device.imei,
             deviceModel: device.model,
             protocol: device.protocol,
-            port: device.port,
+            port: Number(device.port),
             simModel: sim.model,
             simImei: sim.imei,
             simNumber: sim.number,
+            status: 'ACTIVE',
             createdBy: activatedBy,
           },
         ],
         { session }
       );
 
-      // 3. Create the vehicle
+      // 5. Create the vehicle
       const [vehicleDoc] = await Vehicle.create(
         [
           {
@@ -313,12 +390,13 @@ export const activateLicense = asyncHandler(async (req, res) => {
             customAttributes: Array.isArray(vehicle.customAttributes)
               ? vehicle.customAttributes.filter((a) => a.key)
               : [],
+            status: 'ACTIVE',
           },
         ],
         { session }
       );
 
-      // 4. Work out the license validity window from the package's own duration
+      // 6. Work out the license validity window from the package's own duration
       const startDate = new Date();
       const expiryDate = new Date(startDate);
       const durationValue = licensePackage.duration?.value ?? 12;
@@ -326,40 +404,54 @@ export const activateLicense = asyncHandler(async (req, res) => {
       const applyDuration = DURATION_UNIT_HANDLERS[durationUnit] ?? DURATION_UNIT_HANDLERS.MONTH;
       applyDuration(expiryDate, durationValue);
 
-      // 5. Create the license
+      // 7. Generate license key
+      const licenseKey = generateLicenseKey();
+
+      // 8. Create the license with payment fields
       const [licenseDoc] = await License.create(
         [
           {
             packageId: licensePackage._id,
             dealerId,
             userId: subUserId || ownerUserId,
+            licenseKey,
             startDate,
             expiryDate,
             activatedBy,
             activatedAt: startDate,
+            status: 'ACTIVE',
+            // Payment fields
+            paymentMode: paymentMode,
+            transactionReference: transactionReference || '',
+            orderNotes: notes || '',
+            paymentStatus: 'COMPLETED',
+            orderStatus: 'COMPLETED',
+            orderDate: new Date(),
           },
         ],
         { session }
       );
 
-      // 6. Link the device back to the license
+      // 9. Link the device back to the license
       deviceDoc.licenseId = licenseDoc._id;
       await deviceDoc.save({ session });
 
-      // 7. Assign the device to the vehicle
+      // 10. Assign the device to the vehicle
       await DeviceAssignment.create(
         [
           {
             deviceId: deviceDoc._id,
             vehicleId: vehicleDoc._id,
             assignedFrom: startDate,
+            assignedTo: expiryDate,
             assignedBy: activatedBy,
+            status: 'ACTIVE',
           },
         ],
         { session }
       );
 
-      // 8. Record the license history entry
+      // 11. Record the license history entry
       await LicenseHistory.create(
         [
           {
@@ -367,29 +459,89 @@ export const activateLicense = asyncHandler(async (req, res) => {
             vehicleId: vehicleDoc._id,
             deviceId: deviceDoc._id,
             assignedFrom: startDate,
+            assignedTo: expiryDate,
             assignedBy: activatedBy,
+            status: 'ACTIVE',
           },
         ],
         { session }
       );
 
-      // 9. Consume one seat from the package
+      // 12. Consume one seat from the package
       licensePackage.usedLicenseCount += 1;
       await licensePackage.save({ session });
 
+      // 13. Generate order number and create order
+      const orderNumber = await generateOrderNumber();
+      
+      // Update license with order number
+      licenseDoc.orderNumber = orderNumber;
+      await licenseDoc.save({ session });
+
+      // Create order record
+      const [orderDoc] = await Order.create(
+        [
+          {
+            dealerId: dealerId,
+            userId: subUserId || ownerUserId,
+            orderType: 'USER_ACTIVATION',
+            licenseId: licenseDoc._id,
+            packageId: packageId,
+            amount: licensePackage.price || 0,
+            paymentMode: paymentMode || 'ONLINE',
+            transactionReference: transactionReference || '',
+            paymentStatus: 'COMPLETED',
+            orderStatus: 'COMPLETED',
+            description: `User Activation: ${licensePackage.packageName} - ${licensePackage.packageCode}`,
+            notes: notes || 'License activation for user',
+            createdBy: activatedBy,
+            orderNumber: orderNumber,
+            status: 'ACTIVE',
+          },
+        ],
+        { session }
+      );
+
+      // 14. Populate the result with all related data
+      const populatedLicense = await License.findById(licenseDoc._id)
+        .populate('dealerId userId packageId activatedBy')
+        .session(session);
+
+      const populatedDevice = await Device.findById(deviceDoc._id)
+        .populate('dealerId ownerUserId licenseId')
+        .session(session);
+
+      const populatedVehicle = await Vehicle.findById(vehicleDoc._id)
+        .populate('dealerId ownerUserId deviceId')
+        .session(session);
+
+      const populatedOrder = await Order.findById(orderDoc._id)
+        .populate('dealerId userId createdBy')
+        .session(session);
+
       result = {
-        license: licenseDoc,
-        device: deviceDoc,
-        vehicle: vehicleDoc,
+        license: populatedLicense,
+        device: populatedDevice,
+        vehicle: populatedVehicle,
+        order: populatedOrder,
         package: {
           licenseCount: licensePackage.licenseCount,
           usedLicenseCount: licensePackage.usedLicenseCount,
           availableLicenses: licensePackage.licenseCount - licensePackage.usedLicenseCount,
+          packageName: licensePackage.packageName,
+          packageCode: licensePackage.packageCode,
         },
       };
     });
 
+    console.log('=== LICENSE ACTIVATION SUCCESS ===');
+    console.log('License ID:', result.license._id);
+    console.log('Order #:', result.order.orderNumber);
+
     res.status(201).json(ApiResponse.success(result, 'License activated successfully'));
+  } catch (error) {
+    console.error('License activation error:', error);
+    throw error;
   } finally {
     session.endSession();
   }

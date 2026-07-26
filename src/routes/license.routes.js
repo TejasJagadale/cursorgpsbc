@@ -1,6 +1,7 @@
 // routes/license.routes.js
 import { Router } from 'express';
 import { licenseController } from '../controllers/license.controller.js';
+import { activateLicense } from '../controllers/licenseActivation.controller.js';
 import { authenticate, authorize } from '../middlewares/auth.middleware.js';
 
 const router = Router();
@@ -16,6 +17,9 @@ router.get('/:id', authorize(['ADMIN', 'DEALER', 'USER', 'SUB_USER']), licenseCo
 
 // CREATE license
 router.post('/', authorize(['ADMIN', 'DEALER']), licenseController.create);
+
+// ACTIVATE license (custom endpoint)
+router.post('/activate', authorize(['ADMIN', 'DEALER']), activateLicense);
 
 // UPDATE license
 router.patch('/:id', authorize(['ADMIN', 'DEALER']), licenseController.update);
