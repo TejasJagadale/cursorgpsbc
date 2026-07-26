@@ -265,128 +265,125 @@ export function createCrudController(Model, options = {}) {
   };
 
   return {
-    // In createCrudController.js - Only validate fields that exist in the model
-    create: asyncHandler(async (req, res) => {
-      console.log('=== CREATE CONTROLLER START ===');
-      let body = { ...req.body };
-      console.log('Original body:', JSON.stringify(body, null, 2));
-      console.log('User role:', req.user?.role);
-      console.log('User ID:', req.user?._id);
 
-      const scope = getOwnerScope(req);
-      console.log('Owner scope:', scope);
-      if (scope) {
-        Object.assign(body, scope);
-        console.log('After applying owner scope:', JSON.stringify(body, null, 2));
+create: asyncHandler(async (req, res) => {
+  console.log('=== CREATE CONTROLLER START ===');
+  let body = { ...req.body };
+  console.log('Original body:', JSON.stringify(body, null, 2));
+  console.log('User role:', req.user?.role);
+  console.log('User ID:', req.user?._id);
+
+  const scope = getOwnerScope(req);
+  console.log('Owner scope:', scope);
+  if (scope) {
+    Object.assign(body, scope);
+    console.log('After applying owner scope:', JSON.stringify(body, null, 2));
+  }
+
+  // Get the model's schema paths to check which fields are actually required
+  const schemaPaths = Model.schema.paths;
+  const requiredFields = [];
+  
+  // Only check fields that are actually in the schema and are required
+  Object.keys(schemaPaths).forEach(path => {
+    // Skip createdBy if it's not required (has default: null)
+    if (path === 'createdBy' && schemaPaths[path].options?.default !== undefined) {
+      return; // Skip createdBy if it has a default value
+    }
+    if (schemaPaths[path].isRequired && !path.includes('.')) {
+      requiredFields.push(path);
+    }
+  });
+  
+  // Also check if the model has specific required fields (for UserAccess)
+  if (Model.modelName === 'UserAccess') {
+    ['dealerId', 'ownerUserId', 'sharedUserId', 'createdBy'].forEach(field => {
+      if (!requiredFields.includes(field)) {
+        requiredFields.push(field);
       }
+    });
+  }
 
-      // Get the model's schema paths to check which fields are actually required
-      const schemaPaths = Model.schema.paths;
-      const requiredFields = [];
+  // Check missing fields - skip createdBy if it has a default
+  const missingFields = requiredFields.filter(field => {
+    // Skip createdBy if it has a default value in schema
+    if (field === 'createdBy' && schemaPaths[field]?.options?.default !== undefined) {
+      return false;
+    }
+    return body[field] === undefined || body[field] === null || body[field] === '';
+  });
+  
+  if (missingFields.length > 0) {
+    console.error('Missing required fields:', missingFields);
+    throw ApiError.badRequest(`Missing required fields: ${missingFields.join(', ')}`);
+  }
 
-      // Only check fields that are actually in the schema and are required
-      Object.keys(schemaPaths).forEach(path => {
-        if (schemaPaths[path].isRequired && !path.includes('.')) {
-          requiredFields.push(path);
-        }
-      });
-
-      // Also check if the model has specific required fields (for UserAccess)
-      // But skip sharedUserId for User model
-      if (Model.modelName === 'UserAccess') {
-        ['dealerId', 'ownerUserId', 'sharedUserId', 'createdBy'].forEach(field => {
-          if (!requiredFields.includes(field)) {
-            requiredFields.push(field);
-          }
-        });
+  // Validate ObjectIds - only for fields that exist in the model
+  const objectIdFields = Object.keys(schemaPaths).filter(path => 
+    schemaPaths[path].instance === 'ObjectID' && !path.includes('.')
+  );
+  
+  // Add specific fields for UserAccess
+  if (Model.modelName === 'UserAccess') {
+    ['dealerId', 'ownerUserId', 'sharedUserId', 'createdBy'].forEach(field => {
+      if (!objectIdFields.includes(field) && body[field]) {
+        objectIdFields.push(field);
       }
+    });
+  }
+
+  const invalidIds = objectIdFields.filter(field => 
+    body[field] && !mongoose.Types.ObjectId.isValid(body[field])
+  );
+  
+  if (invalidIds.length > 0) {
+    console.error('Invalid ObjectIds:', invalidIds);
+    throw ApiError.badRequest(`Invalid ObjectIds for fields: ${invalidIds.join(', ')}`);
+  }
+
+  if (transformCreate) {
+    console.log('Calling transformCreate...');
+    body = await transformCreate(body, req);
+    console.log('After transformCreate:', JSON.stringify(body, null, 2));
+  }
+
+  // Ensure createdBy is set if not already
+  if (!body.createdBy && req.user?._id) {
+    body.createdBy = req.user._id;
+    console.log('Set createdBy to:', body.createdBy);
+  }
+
+  console.log('Creating document...');
+  try {
+    const document = await Model.create(body);
+    console.log('Document created:', document._id);
+    
+    if (afterCreate) {
+      console.log('Calling afterCreate hook...');
+      await afterCreate(document, req);
+      console.log('afterCreate hook completed');
+    }
+
+    let result = document;
+
+    if (select || populate.length > 0) {
+      result = await applyPopulate(Model.findById(document._id).select(select));
+    }
+
+    console.log('=== CREATE CONTROLLER END ===');
+    res.status(201).json(ApiResponse.success(result, 'Created successfully'));
+  } catch (error) {
+    console.error('Error creating document:', error);
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      errors: error.errors
+    });
+    throw error;
+  }
+}),
 
 
-      // Also check if the model has specific required fields (for UserAccess)
-      if (Model.modelName === 'UserAccess') {
-        ['dealerId', 'ownerUserId', 'sharedUserId', 'createdBy'].forEach(field => {
-          if (!requiredFields.includes(field)) {
-            requiredFields.push(field);
-          }
-        });
-      }
-
-      // Check missing fields
-      const missingFields = requiredFields.filter(field =>
-        body[field] === undefined || body[field] === null || body[field] === ''
-      );
-
-      if (missingFields.length > 0) {
-        console.error('Missing required fields:', missingFields);
-        throw ApiError.badRequest(`Missing required fields: ${missingFields.join(', ')}`);
-      }
-
-      // Validate ObjectIds - only for fields that exist in the model
-      const objectIdFields = Object.keys(schemaPaths).filter(path =>
-        schemaPaths[path].instance === 'ObjectID' && !path.includes('.')
-      );
-
-      // Add specific fields for UserAccess
-      if (Model.modelName === 'UserAccess') {
-        ['dealerId', 'ownerUserId', 'sharedUserId', 'createdBy'].forEach(field => {
-          if (!objectIdFields.includes(field) && body[field]) {
-            objectIdFields.push(field);
-          }
-        });
-      }
-
-      // Skip createdBy validation for Order model if it's null or empty
-      if (Model.modelName === 'Order') {
-        const createdByIndex = objectIdFields.indexOf('createdBy');
-        if (createdByIndex > -1) {
-          objectIdFields.splice(createdByIndex, 1);
-        }
-      }
-
-      const invalidIds = objectIdFields.filter(field =>
-        body[field] && !mongoose.Types.ObjectId.isValid(body[field])
-      );
-
-      if (invalidIds.length > 0) {
-        console.error('Invalid ObjectIds:', invalidIds);
-        throw ApiError.badRequest(`Invalid ObjectIds for fields: ${invalidIds.join(', ')}`);
-      }
-
-      if (transformCreate) {
-        console.log('Calling transformCreate...');
-        body = await transformCreate(body, req);
-        console.log('After transformCreate:', JSON.stringify(body, null, 2));
-      }
-
-      console.log('Creating document...');
-      try {
-        const document = await Model.create(body);
-        console.log('Document created:', document._id);
-
-        if (afterCreate) {
-          console.log('Calling afterCreate hook...');
-          await afterCreate(document, req);
-          console.log('afterCreate hook completed');
-        }
-
-        let result = document;
-
-        if (select || populate.length > 0) {
-          result = await applyPopulate(Model.findById(document._id).select(select));
-        }
-
-        console.log('=== CREATE CONTROLLER END ===');
-        res.status(201).json(ApiResponse.success(result, 'Created successfully'));
-      } catch (error) {
-        console.error('Error creating document:', error);
-        console.error('Error details:', {
-          message: error.message,
-          stack: error.stack,
-          errors: error.errors
-        });
-        throw error;
-      }
-    }),
     getAll: asyncHandler(async (req, res) => {
       const { page, limit, skip } = getPagination(req.query);
       const filter = buildFilter(req);

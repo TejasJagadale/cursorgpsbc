@@ -1,3 +1,4 @@
+// routes/licensePackage.routes.js
 import { licensePackageController } from '../controllers/licensePackage.controller.js';
 import { createCrudRoutes } from './createCrudRoutes.js';
 

@@ -35,6 +35,11 @@ export const licensePackageController = createCrudController(LicensePackage, {
   transformCreate: async (body, req) => {
     console.log('=== LICENSE PACKAGE TRANSFORM CREATE ===');
     console.log('Original body:', JSON.stringify(body, null, 2));
+    console.log('User:', req.user ? {
+      _id: req.user._id,
+      role: req.user.role,
+      name: req.user.name
+    } : 'No user');
 
     // Ensure dealerId is properly set
     if (body.dealerId) {
@@ -47,16 +52,25 @@ export const licensePackageController = createCrudController(LicensePackage, {
       }
     }
 
+    // If user is DEALER, force dealerId to their own ID
     if (req.user && req.user.role === 'DEALER') {
       body.dealerId = req.user._id;
       console.log('DEALER role - forced dealerId:', body.dealerId);
     }
 
-    // Set createdBy only if user exists
-    if (req.user) {
+    // ALWAYS set createdBy to current user
+    if (req.user && req.user._id) {
       body.createdBy = req.user._id;
+      console.log('Set createdBy to:', body.createdBy);
+    } else {
+      // Fallback: try to get from body
+      if (!body.createdBy) {
+        console.error('No createdBy found!');
+        throw new Error('createdBy is required');
+      }
     }
 
+    // Ensure dealerId is set
     if (!body.dealerId) {
       throw new Error('dealerId is required');
     }
@@ -70,6 +84,7 @@ export const licensePackageController = createCrudController(LicensePackage, {
     };
 
     console.log('Final body after transform:', JSON.stringify(body, null, 2));
+    console.log('=== LICENSE PACKAGE TRANSFORM END ===');
     return body;
   },
   afterCreate: async (document, req) => {
@@ -91,7 +106,7 @@ export const licensePackageController = createCrudController(LicensePackage, {
         orderStatus: 'COMPLETED',
         description: `License Package: ${document.packageName} (${document.packageCode})`,
         notes: req.body.notes || '',
-        createdBy: req.user?._id || null, // Allow null
+        createdBy: req.user?._id || document.createdBy || null,
       };
       
       // Generate order number

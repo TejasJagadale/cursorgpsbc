@@ -1,3 +1,4 @@
+// models/LicensePackage.js
 import mongoose from 'mongoose';
 import { DurationUnit, EntityStatus } from '../constants/enums.js';
 
@@ -65,7 +66,8 @@ const licensePackageSchema = new mongoose.Schema(
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
+      required: false, // Make it optional
+      default: null,
     },
   },
   {
