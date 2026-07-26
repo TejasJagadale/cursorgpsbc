@@ -42,7 +42,6 @@ const getAllWithOrders = async (req, res, next) => {
       if (dealerId) {
         filter.dealerId = dealerId;
       }
-      // Also show licenses for this specific user
       if (req.user?.role === 'USER') {
         filter.userId = req.user._id;
       }
@@ -70,12 +69,6 @@ const getAllWithOrders = async (req, res, next) => {
         
         if (order) {
           licenseObj.order = order;
-          licenseObj.paymentMode = order.paymentMode;
-          licenseObj.transactionReference = order.transactionReference;
-          licenseObj.notes = order.notes;
-          licenseObj.orderNumber = order.orderNumber;
-          licenseObj.paymentStatus = order.paymentStatus;
-          licenseObj.orderStatus = order.orderStatus;
         }
         
         return licenseObj;
@@ -122,12 +115,6 @@ const getByIdWithOrder = async (req, res, next) => {
     
     if (order) {
       licenseObj.order = order;
-      licenseObj.paymentMode = order.paymentMode;
-      licenseObj.transactionReference = order.transactionReference;
-      licenseObj.notes = order.notes;
-      licenseObj.orderNumber = order.orderNumber;
-      licenseObj.paymentStatus = order.paymentStatus;
-      licenseObj.orderStatus = order.orderStatus;
     }
     
     res.json({
@@ -153,6 +140,17 @@ export const licenseController = {
       DEALER: 'dealerId',
       USER: 'dealerId',
     },
+    transformCreate: async (body, req) => {
+      // Set payment fields from request body
+      body.paymentMode = body.paymentMode || 'ONLINE';
+      body.transactionReference = body.transactionReference || '';
+      body.orderNotes = body.notes || '';
+      body.paymentStatus = 'COMPLETED';
+      body.orderStatus = 'COMPLETED';
+      body.orderDate = new Date();
+      
+      return body;
+    },
     afterCreate: async (document, req) => {
       console.log('=== LICENSE AFTER CREATE HOOK ===');
       console.log('Document:', document);
@@ -160,6 +158,14 @@ export const licenseController = {
       try {
         // Check if this is a user activation
         if (document.userId) {
+          // Generate order number
+          const orderNumber = await generateOrderNumber();
+          
+          // Update the license with order number
+          await License.findByIdAndUpdate(document._id, {
+            orderNumber: orderNumber
+          });
+          
           // Create order for user activation
           const orderData = {
             dealerId: document.dealerId,
@@ -168,13 +174,14 @@ export const licenseController = {
             licenseId: document._id,
             packageId: document.packageId,
             amount: 0,
-            paymentMode: req.body.paymentMode || 'ONLINE',
-            transactionReference: req.body.transactionReference || '',
+            paymentMode: document.paymentMode || 'ONLINE',
+            transactionReference: document.transactionReference || '',
             paymentStatus: 'COMPLETED',
             orderStatus: 'COMPLETED',
             description: `User Activation: License for user ${document.userId}`,
-            notes: req.body.notes || 'License activation for user',
+            notes: document.orderNotes || 'License activation for user',
             createdBy: req.user?._id || null,
+            orderNumber: orderNumber,
           };
           
           // Get package price if available
@@ -187,14 +194,15 @@ export const licenseController = {
             }
           }
           
-          // Generate order number
-          const orderNumber = await generateOrderNumber();
-          orderData.orderNumber = orderNumber;
-          
           console.log('Creating order with data:', orderData);
           
           const order = await Order.create(orderData);
           console.log('Order created:', order._id);
+          
+          // Update the license with the order ID
+          await License.findByIdAndUpdate(document._id, {
+            orderId: order._id
+          });
           
           return order;
         }

@@ -66,8 +66,40 @@ const licensePackageSchema = new mongoose.Schema(
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: false, // Make it optional
+      required: false,
       default: null,
+    },
+    // Payment/Order fields
+    orderNumber: {
+      type: String,
+      default: '',
+    },
+    paymentMode: {
+      type: String,
+      enum: ['CASH', 'CARD', 'UPI', 'BANK_TRANSFER', 'CHEQUE', 'ONLINE', 'OTHER'],
+      default: 'ONLINE',
+    },
+    transactionReference: {
+      type: String,
+      default: '',
+    },
+    paymentStatus: {
+      type: String,
+      enum: ['PENDING', 'COMPLETED', 'FAILED', 'REFUNDED'],
+      default: 'COMPLETED',
+    },
+    orderStatus: {
+      type: String,
+      enum: ['PENDING', 'PROCESSING', 'COMPLETED', 'CANCELLED'],
+      default: 'COMPLETED',
+    },
+    orderNotes: {
+      type: String,
+      default: '',
+    },
+    orderDate: {
+      type: Date,
+      default: Date.now,
     },
   },
   {
@@ -78,5 +110,6 @@ const licensePackageSchema = new mongoose.Schema(
 
 licensePackageSchema.index({ dealerId: 1, packageCode: 1 }, { unique: true });
 licensePackageSchema.index({ dealerId: 1, status: 1 });
+licensePackageSchema.index({ orderNumber: 1 });
 
 export const LicensePackage = mongoose.model('LicensePackage', licensePackageSchema);

@@ -1,13 +1,9 @@
+// models/License.js
 import mongoose from 'mongoose';
 import { EntityStatus } from '../constants/enums.js';
 
 const licenseSchema = new mongoose.Schema(
   {
-    packageId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'LicensePackage',
-      required: true,
-    },
     dealerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -16,6 +12,16 @@ const licenseSchema = new mongoose.Schema(
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
+      required: true,
+    },
+    packageId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'LicensePackage',
+      required: true,
+    },
+    licenseKey: {
+      type: String,
+      unique: true,
       required: true,
     },
     startDate: {
@@ -38,7 +44,39 @@ const licenseSchema = new mongoose.Schema(
     },
     activatedAt: {
       type: Date,
-      required: true,
+      default: Date.now,
+    },
+    // Payment/Order fields
+    orderNumber: {
+      type: String,
+      default: '',
+    },
+    paymentMode: {
+      type: String,
+      enum: ['CASH', 'CARD', 'UPI', 'BANK_TRANSFER', 'CHEQUE', 'ONLINE', 'OTHER'],
+      default: 'ONLINE',
+    },
+    transactionReference: {
+      type: String,
+      default: '',
+    },
+    paymentStatus: {
+      type: String,
+      enum: ['PENDING', 'COMPLETED', 'FAILED', 'REFUNDED'],
+      default: 'COMPLETED',
+    },
+    orderStatus: {
+      type: String,
+      enum: ['PENDING', 'PROCESSING', 'COMPLETED', 'CANCELLED'],
+      default: 'COMPLETED',
+    },
+    orderNotes: {
+      type: String,
+      default: '',
+    },
+    orderDate: {
+      type: Date,
+      default: Date.now,
     },
   },
   {
@@ -48,7 +86,8 @@ const licenseSchema = new mongoose.Schema(
 );
 
 licenseSchema.index({ dealerId: 1, userId: 1 });
-licenseSchema.index({ packageId: 1 });
-licenseSchema.index({ expiryDate: 1, status: 1 });
+licenseSchema.index({ licenseKey: 1 });
+licenseSchema.index({ expiryDate: 1 });
+licenseSchema.index({ orderNumber: 1 });
 
 export const License = mongoose.model('License', licenseSchema);
