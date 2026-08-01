@@ -11,7 +11,7 @@
 //   },
 // });
 
-// controllers/device.controller.js (extend the existing controller)
+// controllers/device.controller.js
 import { Device } from '../models/Device.js';
 import { createCrudController } from '../utils/createCrudController.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
